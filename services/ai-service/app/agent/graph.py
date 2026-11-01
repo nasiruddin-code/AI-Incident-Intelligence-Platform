@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 from starlette.concurrency import run_in_threadpool
 from app.agent import tools as agent_tools
+from app.agent.events import emit
 from app.agent.planner import run_planner
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -42,12 +43,14 @@ def _record(tool: str, input_summary: str, success: bool, output: Any) -> ToolCa
         out_summary = json_summary(output)
     else:
         out_summary = str(output)[:300]
-    return ToolCallRecord(
+    record = ToolCallRecord(
         tool=tool,
         input_summary=input_summary,
         success=success,
         output_summary=out_summary,
     )
+    emit("step", record.model_dump())
+    return record
 
 
 def json_summary(data: Dict[str, Any], limit: int = 400) -> str:
@@ -67,9 +70,13 @@ async def run_investigation(
     mode = req.mode or get_settings().AGENT_MODE
     if mode == "planner" or (mode == "auto" and provider.name != "mock"):
         try:
+            emit("mode", {"mode": "planner"})
             return await run_planner(req, provider, _build_summary)
         except Exception as exc:
             logger.warning("Planner agent unavailable (%s); using fixed pipeline", exc)
+            emit("mode", {"mode": "fixed", "reason": f"planner unavailable: {exc}"})
+    else:
+        emit("mode", {"mode": "fixed"})
 
     try:
         return await _run_langgraph(req, provider)

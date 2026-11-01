@@ -20,6 +20,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from starlette.concurrency import run_in_threadpool
 
 from app.agent import tools as agent_tools
+from app.agent.events import emit
 from app.core.logging import get_logger
 from app.prompts.agent import AGENT_PLANNER_PROMPT
 from app.providers.base import AIProvider
@@ -169,6 +170,7 @@ async def run_planner(
             tools=tool_lines,
             history=_format_history(history),
         )
+        emit("planning", {"step": step + 1, "max_steps": req.max_steps})
         action, info = await provider.generate_structured_with_info(
             prompt, AgentAction, system_instruction=AGENT_PLANNER_PROMPT.system_instruction
         )
@@ -206,15 +208,15 @@ async def run_planner(
         elif action.tool in NEEDS_INCIDENT and ok and not incident_id:
             incident_id = args["incident_id"]
 
-        steps.append(
-            ToolCallRecord(
-                tool=action.tool,
-                input_summary=input_summary,
-                success=ok,
-                output_summary=_truncate(observation, 400),
-                thought=action.thought,
-            )
+        record = ToolCallRecord(
+            tool=action.tool,
+            input_summary=input_summary,
+            success=ok,
+            output_summary=_truncate(observation, 400),
+            thought=action.thought,
         )
+        steps.append(record)
+        emit("step", record.model_dump())
         if ok:
             findings[FINDING_KEYS.get(action.tool, action.tool)] = observation
         history.append((action, input_summary, observation))

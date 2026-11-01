@@ -93,6 +93,8 @@ def test_enrich_maps_and_merges_live_telemetry(client, backends):
     metrics = {m["name"]: m for m in incident["metrics"]}
     assert set(metrics) == {"payments_total", "payment_duration_seconds"}
     assert metrics["payments_total"]["type"] == "COUNTER"
+    # scrape/process labels (service_name, job, ...) are not stored as attributes
+    assert metrics["payments_total"]["attributes"] == {"status": "failed"}
     assert metrics["payment_duration_seconds"]["value"] == pytest.approx(2.5)
 
     span = incident["traces"][0]

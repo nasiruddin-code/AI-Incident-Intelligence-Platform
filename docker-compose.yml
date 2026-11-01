@@ -137,6 +137,18 @@ services:
       - observability-net
     restart: unless-stopped
 
+  # --- Web UI: incidents, evidence, analysis and live agent (proxies /api) --
+  web-ui:
+    build:
+      context: ./services/web-ui
+    ports:
+      - "8080:8080"
+    networks:
+      - observability-net
+    depends_on:
+      - ai-service
+    restart: unless-stopped
+
   # --- Week 6: Sample microservices -----------------------------------------
   payment-service:
     build:

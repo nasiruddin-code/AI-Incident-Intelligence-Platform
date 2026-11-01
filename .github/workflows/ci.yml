@@ -77,6 +77,25 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
 
+  web-ui:
+    name: test (web-ui)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/web-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax check
+        run: for f in static/js/*.js; do node --check "$f"; done
+      - name: Unit tests
+        run: node --test "tests/*.test.mjs"
+      - name: nginx config
+        run: |
+          docker run --rm --add-host ai-service:127.0.0.1             -v "$PWD/nginx.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.27-alpine nginx -t
+
   observability-config:
     name: validate observability + compose config
     runs-on: ubuntu-latest
@@ -115,7 +134,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [ai-service, order-service, payment-service]
+        service: [ai-service, order-service, payment-service, web-ui]
     steps:
       - uses: actions/checkout@v4
       - name: Build image

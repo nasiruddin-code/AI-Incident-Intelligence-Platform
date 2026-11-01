@@ -87,6 +87,7 @@ curl -X POST http://localhost:8001/api/v1/orders \
 
 | Service          | URL / Port              |
 |------------------|-------------------------|
+| **Web UI**       | http://localhost:8080 — incidents, evidence, analysis, live AI agent |
 | AI Service       | http://localhost:8000/docs |
 | Order Service    | http://localhost:8001/docs |
 | Payment Service  | http://localhost:8002/docs |

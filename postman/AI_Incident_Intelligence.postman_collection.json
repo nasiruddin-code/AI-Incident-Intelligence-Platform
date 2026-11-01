@@ -564,6 +564,24 @@
           }
         },
         {
+          "name": "Agent Investigate (stream)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incident_id\": \"{{incident_id}}\",\n  \"question\": \"Why are payments failing?\"\n}"
+            },
+            "url": "{{ai_base}}/api/v1/agent/investigate/stream",
+            "description": "Server-sent events: mode, planning, step (each tool + reasoning), result."
+          }
+        },
+        {
           "name": "Agent Investigate (latest)",
           "request": {
             "method": "POST",

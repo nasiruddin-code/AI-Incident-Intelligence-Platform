@@ -262,6 +262,12 @@ scores 3/6, which is the floor a real model should clear.
 - **fixed** — the deterministic pipeline (resolve → evidence → correlate →
   RCA → runbook → summary).
 
+`POST /api/v1/agent/investigate/stream` takes the same request and returns
+server-sent events as the investigation runs: `mode`, `planning` (the model is
+choosing the next tool), `step` (each tool result, with the model's reasoning),
+then `result` (the full response) or `error`. Idle keepalive comments are sent
+every 15 s; if the client disconnects, the investigation is cancelled.
+
 `auto` (default) uses the planner whenever a real model is configured, and the
 fixed pipeline with the mock provider or if the model is unavailable. The
 response's `mode` field says which ran; each step includes the model's `thought`.

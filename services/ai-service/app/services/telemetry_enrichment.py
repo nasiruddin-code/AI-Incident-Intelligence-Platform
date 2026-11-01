@@ -52,6 +52,20 @@ logger = get_logger(__name__)
 
 _IGNORED_METRICS = ("target_info", "up", "scrape_")
 
+# Labels describing where a series was scraped from / which process sent it,
+# not what it measures. Dropped so evidence (and the RCA prompt) keep only
+# meaningful dimensions like status, route or currency. The service itself is
+# kept as the metric's resource.
+_INFRA_LABELS = {
+    "job", "instance", "service", "exported_job", "exported_instance", "service_name",
+    "service_version", "service_instance_id", "deployment_environment", "url_scheme",
+    "network_protocol_version",
+}
+
+
+def _is_infra_label(key: str) -> bool:
+    return key in _INFRA_LABELS or key.startswith("telemetry_sdk_")
+
 _SEVERITY_ALIASES = {
     "TRACE": SeverityLevel.TRACE,
     "DEBUG": SeverityLevel.DEBUG,
@@ -135,7 +149,7 @@ def map_prometheus_rows(rows: List[Dict[str, Any]], service: str, prefix: str) -
             name = name[len(prefix):]
         if name.startswith(_IGNORED_METRICS) or name.endswith("_bucket"):
             continue
-        attrs = {k: str(v) for k, v in labels.items()}
+        attrs = {k: str(v) for k, v in labels.items() if not _is_infra_label(k)}
         key_attrs = tuple(sorted(attrs.items()))
         if name.endswith("_sum"):
             sums[(name[:-4], key_attrs)] = (row["value"], row["timestamp"])
