@@ -13,6 +13,7 @@ from app.schemas.runbook import RunbookResponse
 from app.schemas.incident import (
     BuildContextRequest,
     BaselineResult,
+    SimilarIncidentsResponse,
     CorrelationResult,
     EnrichmentResult,
     EnrichRequest,
@@ -229,6 +230,27 @@ async def enrich_incident(
         )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+
+@router.get(
+    "/{incident_id}/similar",
+    response_model=SimilarIncidentsResponse,
+    summary="Find past incidents like this one",
+)
+def similar_incidents(
+    incident_id: str,
+    limit: int = Query(5, ge=1, le=50),
+    min_score: float = Query(0.3, ge=0.0, le=1.0),
+) -> SimilarIncidentsResponse:
+    """Ranks other incidents by signature similarity (services, error-log
+    templates, failing spans, anomalies, alerts, RCA cause). Each result lists
+    the shared features that explain the match, plus its past RCA and runbook.
+    """
+    try:
+        items = incident_store.find_similar(incident_id, limit=limit, min_score=min_score)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+    return SimilarIncidentsResponse(incident_id=incident_id, count=len(items), similar=items)
 
 
 @router.post(

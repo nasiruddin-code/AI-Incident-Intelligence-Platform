@@ -144,6 +144,26 @@ RCA prompt. Alertmanager-driven investigations run it automatically
 The fixed-threshold rules still run on the incident's own evidence, so
 offline/synthetic incidents keep working without Prometheus.
 
+## Similar incidents
+
+`GET /api/v1/incidents/{id}/similar` ranks past incidents by how alike they
+are. Each incident has a signature (stored in `incidents.signature`,
+refreshed on every save) of weighted features: affected services, alert names,
+scenario, rule-based and baseline anomalies, error and warning log *templates*
+(IDs, numbers and hex stripped, so `order_id=ab12…` and `order_id=cd34…`
+match), failing span names, and words from the title and RCA cause.
+Similarity is the cosine of two signatures (0–1); every result lists the shared
+features that explain it, plus that incident's RCA cause and runbook.
+
+RCA (`rca_v2` prompt) includes the top `SIMILAR_IN_RCA` matches above
+`SIMILAR_MIN_SCORE` as **context, not evidence** — the model may cite a past
+incident only when the current evidence shows the same pattern. The RCA
+response lists them in `similar_incidents`; the planner agent has a
+`find_similar_incidents` tool. No embedding model or API is involved, so it is
+free, deterministic and works offline; the signature column can later be
+replaced by a vector column without changing callers. Rows stored before this
+existed get a signature the first time a search sees them.
+
 ## Database: migrations and concurrency
 
 **Migrations.** The schema is managed by Alembic (`app/db/migrations/`) and

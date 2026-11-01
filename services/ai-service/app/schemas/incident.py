@@ -127,6 +127,24 @@ class IncidentSummary(BaseModel):
     evidence_summary: Optional[str] = None
 
 
+class SimilarIncident(BaseModel):
+    incident_id: str
+    title: str
+    status: IncidentStatus
+    severity: SeverityLevel
+    score: float = Field(..., ge=0.0, le=1.0, description="Cosine similarity of incident signatures")
+    shared_features: List[str] = Field(default_factory=list, description="Strongest shared features first")
+    rca_primary_cause: Optional[str] = None
+    rca_confidence: Optional[float] = None
+    runbook_title: Optional[str] = None
+
+
+class SimilarIncidentsResponse(BaseModel):
+    incident_id: str
+    count: int
+    similar: List[SimilarIncident]
+
+
 class BaselineSignalResult(BaseModel):
     service: str
     signal: str

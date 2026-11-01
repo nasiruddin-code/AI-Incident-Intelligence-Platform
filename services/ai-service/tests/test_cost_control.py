@@ -170,7 +170,7 @@ async def test_rca_prompt_ignores_its_own_previous_output():
     assert "[RCA]" not in provider.prompts[1]
     assert first.usage.input_tokens == 1000
     stored = incident_store.get(incident.incident_id)
-    assert stored.metadata["rca_prompt"] == "rca_v1"
+    assert stored.metadata["rca_prompt"] == "rca_v2"
     assert "[RCA]" in stored.notes
 
 

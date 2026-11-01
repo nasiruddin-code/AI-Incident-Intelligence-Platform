@@ -123,6 +123,10 @@ class Settings(BaseSettings):
     BASELINE_MIN_POINTS: int = 10
     BASELINE_Z_THRESHOLD: float = 3.0
 
+    # Similar-incident lookup (GET /incidents/{id}/similar); top N go into the RCA prompt
+    SIMILAR_IN_RCA: int = 3  # 0 disables
+    SIMILAR_MIN_SCORE: float = 0.35
+
     # Namespace the OTel collector's prometheus exporter adds to metric names
     ENRICH_METRIC_PREFIX: str = "otel_"
 

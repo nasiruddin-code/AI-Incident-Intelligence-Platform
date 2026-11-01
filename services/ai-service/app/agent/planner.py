@@ -36,6 +36,7 @@ FINDING_KEYS = {
     "search_evidence": "evidence",
     "collect_live_telemetry": "live_telemetry",
     "analyze_baseline": "baseline",
+    "find_similar_incidents": "similar_incidents",
     "correlate": "correlation",
     "run_rca": "rca",
     "generate_runbook": "runbook",
@@ -50,6 +51,7 @@ NEEDS_INCIDENT = {
     "search_evidence",
     "collect_live_telemetry",
     "analyze_baseline",
+    "find_similar_incidents",
     "correlate",
     "run_rca",
     "generate_runbook",
@@ -108,6 +110,7 @@ async def _dispatch(
         "get_incident": lambda: agent_tools.tool_get_incident(incident_id),
         "search_evidence": lambda: agent_tools.tool_search_evidence(incident_id, query or ""),
         "correlate": lambda: agent_tools.tool_correlate(incident_id),
+        "find_similar_incidents": lambda: agent_tools.tool_find_similar_incidents(incident_id),
     }
     if tool in sync_tools:
         return await run_in_threadpool(sync_tools[tool])

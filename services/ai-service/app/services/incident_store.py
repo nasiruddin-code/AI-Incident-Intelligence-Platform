@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterable, List, Optional, Tuple, TypeVar
 
 from app.core.logging import get_logger
-from app.schemas.incident import IncidentContext, IncidentStatus, IncidentSummary
+from app.schemas.incident import IncidentContext, IncidentStatus, IncidentSummary, SimilarIncident
 from app.schemas.telemetry import SeverityLevel
 from app.services.evidence import evidence_key
 
@@ -223,6 +223,8 @@ def _pg_write(session, incident: IncidentContext) -> None:
     """Version-checked write of header + new evidence inside the caller's transaction."""
     from sqlalchemy import func, insert, update as sql_update
 
+    from app.services.similarity import signature
+
     from app.db.models import IncidentEvidenceRow as E
     from app.db.models import IncidentRow
 
@@ -233,6 +235,7 @@ def _pg_write(session, incident: IncidentContext) -> None:
         "severity": incident.severity.value,
         "payload": _header_payload(incident),
         "notes": incident.notes,
+        "signature": signature(incident),
     }
     if expected == 0:
         if session.get(IncidentRow, incident.incident_id) is not None:
@@ -619,6 +622,84 @@ def find_open_by_metadata(key: str, value: str) -> Optional[IncidentContext]:
     if _use_db():
         return _pg_find_open_by_metadata(key, value)
     return _mem_find_open_by_metadata(key, value)
+
+
+def _similar_item(incident_id, title, status, severity, metadata, score, shared) -> SimilarIncident:
+    metadata = metadata or {}
+    return SimilarIncident(
+        incident_id=incident_id, title=title, status=status, severity=severity,
+        score=score, shared_features=shared[:8],
+        rca_primary_cause=metadata.get("rca_primary_cause"),
+        rca_confidence=metadata.get("rca_confidence"),
+        runbook_title=metadata.get("runbook_title"),
+    )
+
+
+def _rank(candidates, target_sig, limit, min_score) -> List[SimilarIncident]:
+    from app.services.similarity import similarity
+
+    scored = []
+    for incident_id, title, status, severity, metadata, sig in candidates:
+        score, shared = similarity(target_sig, sig or {})
+        if score >= min_score:
+            scored.append(_similar_item(incident_id, title, status, severity, metadata, score, shared))
+    scored.sort(key=lambda s: s.score, reverse=True)
+    return scored[:limit]
+
+
+def _pg_similar_candidates(exclude_id: str):
+    from sqlalchemy import update as sql_update
+
+    from app.db.models import IncidentRow
+    from app.db.session import get_session
+    from app.services.similarity import signature
+
+    session = get_session()
+    try:
+        rows = (
+            session.query(
+                IncidentRow.incident_id, IncidentRow.title, IncidentRow.status, IncidentRow.severity,
+                IncidentRow.payload[("metadata",)].label("metadata"), IncidentRow.signature,
+            )
+            .filter(IncidentRow.incident_id != exclude_id)
+            .all()
+        )
+        candidates = []
+        for r in rows:
+            sig = r.signature
+            if sig is None:  # stored before signatures existed: compute once and keep
+                incident = _pg_get(r.incident_id)
+                sig = signature(incident) if incident else {}
+                session.execute(
+                    sql_update(IncidentRow).where(IncidentRow.incident_id == r.incident_id).values(signature=sig)
+                )
+            candidates.append((r.incident_id, r.title, r.status, r.severity, r.metadata, sig))
+        session.commit()
+        return candidates
+    finally:
+        session.close()
+
+
+def find_similar(incident_id: str, *, limit: int = 5, min_score: float = 0.3) -> List[SimilarIncident]:
+    """Other incidents most like this one (signature cosine), best first.
+
+    Raises KeyError if the incident does not exist.
+    """
+    from app.services.similarity import signature
+
+    target = get(incident_id)
+    if target is None:
+        raise KeyError(f"Incident {incident_id} not found")
+    target_sig = signature(target)
+    if _use_db():
+        candidates = _pg_similar_candidates(incident_id)
+    else:
+        candidates = [
+            (i.incident_id, i.title, i.status.value, i.severity.value, i.metadata, signature(i))
+            for i in _mem_list_all()
+            if i.incident_id != incident_id
+        ]
+    return _rank(candidates, target_sig, limit, min_score)
 
 
 def stats() -> IncidentStats:

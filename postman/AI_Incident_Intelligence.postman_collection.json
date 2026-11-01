@@ -505,6 +505,15 @@
           }
         },
         {
+          "name": "Similar Incidents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}/similar?limit=5",
+            "description": "Past incidents most like this one, with shared features, past RCA cause and runbook."
+          }
+        },
+        {
           "name": "Correlate Incident",
           "request": {
             "method": "POST",

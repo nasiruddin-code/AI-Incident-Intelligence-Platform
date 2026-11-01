@@ -9,11 +9,12 @@ import json
 from typing import Any, Dict, List, Optional
 
 from starlette.concurrency import run_in_threadpool
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.prompts.rca import RCA_PROMPT
 from app.providers.base import AIProvider
 from app.schemas.common import AIUsage
-from app.schemas.incident import CorrelationResult, IncidentContext
+from app.schemas.incident import CorrelationResult, IncidentContext, SimilarIncident
 from app.schemas.rca import RCAResponse, RCAResult
 from app.schemas.telemetry import SeverityLevel, SpanStatus
 from app.services import incident_store
@@ -99,6 +100,24 @@ def _evidence_notes(notes: Optional[str]) -> str:
     return "\n".join(line for line in lines if not line.startswith("[RCA]")).strip()
 
 
+def _fmt_similar(similar: List[SimilarIncident]) -> str:
+    if not similar:
+        return "(none found)"
+    lines = []
+    for s in similar:
+        past = (
+            f"past RCA: {s.rca_primary_cause} (confidence {s.rca_confidence})"
+            if s.rca_primary_cause
+            else "no RCA recorded"
+        )
+        fix = f"; runbook: {s.runbook_title}" if s.runbook_title else ""
+        lines.append(
+            f"- {s.incident_id} [{s.status.value}] '{s.title}' (similarity {s.score:.2f}; "
+            f"shared: {', '.join(s.shared_features[:4])}): {past}{fix}"
+        )
+    return "\n".join(lines)
+
+
 class RCAEngine:
     def __init__(self, provider: AIProvider):
         self._provider = provider
@@ -127,6 +146,18 @@ class RCAEngine:
             except Exception as exc:
                 logger.warning("Correlation step failed, continuing without it: %s", exc)
 
+        settings = get_settings()
+        similar: List[SimilarIncident] = []
+        if settings.SIMILAR_IN_RCA > 0:
+            try:
+                similar = await run_in_threadpool(
+                    lambda: incident_store.find_similar(
+                        incident_id, limit=settings.SIMILAR_IN_RCA, min_score=settings.SIMILAR_MIN_SCORE
+                    )
+                )
+            except Exception as exc:  # context only: never block an RCA
+                logger.warning("Similar-incident lookup failed for %s: %s", incident_id, exc)
+
         prompt = RCA_PROMPT.render(
             incident_id=incident.incident_id,
             title=incident.title,
@@ -145,6 +176,7 @@ class RCAEngine:
             span_count=str(len(incident.traces)),
             traces_block=_fmt_traces(incident),
             correlation_block=_fmt_correlation(corr),
+            similar_block=_fmt_similar(similar),
         )
 
         logger.info(
@@ -185,4 +217,5 @@ class RCAEngine:
             degraded=info.degraded,
             usage=AIUsage.from_info(info),
             rca=result,
+            similar_incidents=similar,
         )

@@ -51,7 +51,7 @@ async def test_harness_runs_all_cases_and_discriminates():
     report = await run(load_cases(), repeat=1, with_runbook=True)
 
     assert report["runs"] == len(load_cases())
-    assert report["prompts"] == {"rca": "rca_v1", "runbook": "runbook_v1"}
+    assert report["prompts"] == {"rca": "rca_v2", "runbook": "runbook_v1"}
     assert report["degraded_runs"] == 0
     by_case = {r["case"]: r for r in report["results"]}
     # The keyword-matching mock gets the easy case right...

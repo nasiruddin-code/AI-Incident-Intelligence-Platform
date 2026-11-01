@@ -243,7 +243,12 @@ def test_legacy_database_is_stamped_migrated_and_reversible(db, tmp_path, monkey
     engine = db_session.get_engine()
     try:
         with engine.connect() as conn:
-            assert conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar_one() == "0002"
+            from alembic.script import ScriptDirectory
+
+            from app.db.migrate import alembic_config
+
+            head = ScriptDirectory.from_config(alembic_config()).get_current_head()
+            assert conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar_one() == head
 
         migrated = incident_store.get("legacy-1")
         assert migrated.version == 1

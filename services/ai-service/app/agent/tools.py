@@ -102,6 +102,14 @@ def tool_search_evidence(incident_id: str, query: str = "") -> Dict[str, Any]:
     }
 
 
+def tool_find_similar_incidents(incident_id: str) -> Dict[str, Any]:
+    try:
+        items = incident_store.find_similar(incident_id, limit=5)
+    except KeyError:
+        return {"error": f"Incident {incident_id} not found"}
+    return {"count": len(items), "similar": [s.model_dump(mode="json") for s in items]}
+
+
 def tool_correlate(incident_id: str) -> Dict[str, Any]:
     try:
         result = correlate_incident(incident_id)
@@ -182,6 +190,7 @@ TOOL_DESCRIPTIONS = {
     "collect_live_telemetry": "Pull live logs, metrics and traces for the incident's services and time window from Loki/Prometheus/Tempo into the incident. Args: incident_id.",
     "analyze_baseline": "Compare the incident's services with their own recent history in Prometheus (request rate, 5xx ratio, latency, business failure ratio); run before correlate. Args: incident_id.",
     "correlate": "Run correlation, anomaly detection, and severity scoring on an incident. Args: incident_id.",
+    "find_similar_incidents": "Past incidents most like this one, with their RCA cause and runbook (context, not evidence). Args: incident_id.",
     "run_rca": "Run AI-assisted root cause analysis on an incident. Args: incident_id.",
     "generate_runbook": "Generate an AI runbook and remediation plan for an incident. Args: incident_id.",
     "query_prometheus": "Run a PromQL instant query (metric names carry the otel_ prefix). Args: query.",
