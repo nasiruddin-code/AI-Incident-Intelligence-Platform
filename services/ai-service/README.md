@@ -70,6 +70,55 @@ the API accepts `Authorization: Bearer <API_KEY>` as well as `X-API-Key`.
 
 Each new alert group costs up to two AI calls (RCA + runbook).
 
+## Notifications
+
+Incident events go to Slack and/or generic webhooks:
+`incident_created`, `rca_completed`, `runbook_completed`, `incident_resolved`
+(from the API, failure scenarios, and Alertmanager-driven investigations).
+
+```
+NOTIFY_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+NOTIFY_WEBHOOK_URLS=["https://example.com/hooks/incidents"]
+NOTIFY_WEBHOOK_SECRET=...        # signs generic bodies: X-Signature-SHA256: sha256=<hmac>
+NOTIFY_MIN_SEVERITY=WARN         # skip quieter incidents
+PUBLIC_BASE_URL=https://ai.example.com   # adds incident links
+```
+
+Generic webhooks receive `{event, timestamp, incident{id,title,status,severity,
+affected_services,url}, details}` with an `X-Event` header. RCA notifications
+include the likely cause and confidence and flag mock-fallback answers.
+Delivery runs after the response is sent; failures are logged and counted in
+`ai_notifications_total{target,outcome}`, never surfaced to the caller.
+
+## Security
+
+**API keys with scopes** (`ENABLE_AUTH=true`). `API_KEY` is a full-access key;
+`API_KEYS` adds named keys limited to scopes:
+
+```
+API_KEYS={"grafana":{"key":"<16+ chars>","scopes":["read"]},
+          "alertmanager":{"key":"<16+ chars>","scopes":["alerts"]},
+          "oncall":{"key":"<16+ chars>","scopes":["read","write","ai"]}}
+```
+
+| Scope | Routes |
+|---|---|
+| `read` | GET requests |
+| `write` | other changes (create/enrich/correlate incidents, status, scenarios) |
+| `ai` | routes that call the AI model: log analysis, RCA, runbook, agent, e2e |
+| `alerts` | `POST /alerts/alertmanager` |
+
+Send keys as `X-API-Key` or `Authorization: Bearer`. `?api_key=` is refused
+unless `ALLOW_API_KEY_QUERY_PARAM=true` (query strings end up in logs). Health,
+`/metrics` and docs stay public. With `ENABLE_AUTH=true` and no keys
+configured, protected routes return 503 instead of running unauthenticated.
+
+**Rate limits** per client (API key name, or IP when auth is off):
+`RATE_LIMIT_PER_MINUTE` (default 300) for all routes and a stricter
+`AI_RATE_LIMIT_PER_MINUTE` (default 30) for AI routes. Over the limit: `429`
+with `Retry-After`; responses carry `X-RateLimit-Limit` / `X-RateLimit-Remaining`.
+Limits are per process — with several replicas, each enforces its own.
+
 ## AI cost control
 
 - **Usage on every response** — RCA, runbook and log-analysis responses include
@@ -224,7 +273,7 @@ response reports per-backend `fetched` / `added` counts and errors.
   Log-analysis, RCA and runbook responses report `provider` (who actually answered) and
   `degraded: true` when the fallback was used; RCA/runbook also persist `rca_degraded` /
   `runbook_degraded` in incident metadata.
-- **API key auth** (optional): set `ENABLE_AUTH=true` and `API_KEY=secret`, pass `X-API-Key: secret`
+- **API key auth** (optional): see *Security* below
 - **E2E workflow**:
 
 ```bash

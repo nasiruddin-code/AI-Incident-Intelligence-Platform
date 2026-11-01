@@ -109,6 +109,17 @@ See individual service READMEs and `observability/README.md` for details.
 | [ROADMAP_STATUS.md](ROADMAP_STATUS.md) | Full 16-week status |
 | [observability/README.md](observability/README.md) | Stack runbook |
 
+## CI
+
+`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests:
+
+- **test** — per service: install, lint (syntax errors / undefined names), pytest
+- **observability-config** — `promtool` (Prometheus config + alert rules),
+  `amtool` (Alertmanager), dashboard JSON, `docker compose config`
+- **docker-build** — builds all three images
+- **evals** — manual only (*Run workflow* → `run_evals`): runs the golden-incident
+  evals against Claude using the `ANTHROPIC_API_KEY` repository secret (billed)
+
 ## Validate MVP
 
 ```bash

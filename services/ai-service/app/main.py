@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.auth import APIKeyMiddleware
+from app.core.rate_limit import RateLimitMiddleware
 
 from app.api.v1.router import api_router
 from app.api.v1.endpoints import metrics as metrics_endpoint
@@ -37,6 +38,8 @@ def _make_lifespan(settings: Settings):
             settings.ENVIRONMENT,
             settings.AI_PROVIDER,
         )
+        if settings.ENVIRONMENT == "production" and not settings.ENABLE_AUTH:
+            logger.warning("ENVIRONMENT=production with ENABLE_AUTH=false: the API is unauthenticated")
         yield
         await close_http_client()
         shutdown_telemetry()
@@ -61,15 +64,19 @@ def create_app() -> FastAPI:
         lifespan=_make_lifespan(settings),
     )
 
+    # Middleware added last runs first: CORS -> auth -> rate limit -> routes.
+    # Auth must precede rate limiting so limits are keyed by API key name.
+    app.add_middleware(RateLimitMiddleware)
+    # Week 15: optional API-key auth with scopes (ENABLE_AUTH=true + API_KEY / API_KEYS)
+    app.add_middleware(APIKeyMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
+        # Credentials with a wildcard origin are rejected by browsers.
+        allow_credentials="*" not in settings.CORS_ORIGINS,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    # Week 15: optional API-key auth (ENABLE_AUTH=true + API_KEY=...)
-    app.add_middleware(APIKeyMiddleware)
 
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
     # Week 14: Prometheus scrape path (unversioned)

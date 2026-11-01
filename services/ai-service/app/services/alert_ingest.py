@@ -29,6 +29,7 @@ from app.schemas.telemetry import LogRecord, Resource, SeverityLevel
 from app.services import incident_store
 from app.services.context_builder import build_context
 from app.services.correlation import _SEV_RANK, correlate_incident
+from app.services.notifier import notify, rca_details, runbook_details
 from app.services.rca_engine import RCAEngine
 from app.services.runbook_engine import RunbookEngine
 from app.services.telemetry_enrichment import TelemetryEnrichmentService
@@ -176,11 +177,15 @@ async def investigate(incident_id: str, provider: AIProvider, settings: Settings
         await step("enrich", lambda: TelemetryEnrichmentService(settings).enrich(incident_id))
     correlation = await step("correlate", lambda: run_in_threadpool(correlate_incident, incident_id))
     if settings.ALERT_AUTO_RCA:
-        await step("rca", lambda: RCAEngine(provider).analyze(
+        rca = await step("rca", lambda: RCAEngine(provider).analyze(
             incident_id, run_correlation=False, correlation=correlation
         ))
+        if rca is not None:
+            await _notify_current("rca_completed", incident_id, rca_details(rca), settings)
         if settings.ALERT_AUTO_RUNBOOK:
-            await step("runbook", lambda: RunbookEngine(provider).generate(incident_id))
+            runbook = await step("runbook", lambda: RunbookEngine(provider).generate(incident_id))
+            if runbook is not None:
+                await _notify_current("runbook_completed", incident_id, runbook_details(runbook), settings)
 
     incident = await run_in_threadpool(incident_store.get, incident_id)
     if incident:
@@ -193,6 +198,21 @@ async def investigate(incident_id: str, provider: AIProvider, settings: Settings
         await run_in_threadpool(incident_store.save, incident)
     logger.info("Auto-investigation for %s finished: %s", incident_id, steps)
     return steps
+
+
+async def _notify_current(
+    event: str, incident_id: str, details: Dict[str, Any], settings: Settings
+) -> None:
+    incident = await run_in_threadpool(incident_store.get, incident_id)
+    if incident:
+        await notify(event, incident, {"source": "alertmanager", **details}, settings)
+
+
+async def notify_ingest_result(result: AlertIngestResult, settings: Settings) -> None:
+    """Background task: announce incidents opened or resolved by Alertmanager."""
+    event = {"created": "incident_created", "resolved": "incident_resolved"}.get(result.action)
+    if event and result.incident_id:
+        await _notify_current(event, result.incident_id, {"alertnames": result.alertnames}, settings)
 
 
 def ingest_and_plan(payload: AlertmanagerWebhook, settings: Settings) -> Tuple[AlertIngestResult, Optional[str]]:

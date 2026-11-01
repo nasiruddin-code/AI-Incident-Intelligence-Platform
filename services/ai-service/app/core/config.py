@@ -2,10 +2,21 @@
 from functools import lru_cache
 from typing import Dict, List, Literal
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ProviderName = Literal["mock", "gemini", "anthropic", "openai", "ollama"]
+
+# read: GET endpoints | write: other non-AI changes | ai: endpoints that call
+# the AI model | alerts: Alertmanager webhook | *: everything
+Scope = Literal["read", "write", "ai", "alerts", "*"]
+NotifyEvent = Literal["incident_created", "rca_completed", "runbook_completed", "incident_resolved"]
+SeverityName = Literal["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"]
+
+
+class APIKeySpec(BaseModel):
+    key: str = Field(..., min_length=16)
+    scopes: List[Scope] = Field(default_factory=lambda: ["read"])
 
 
 class Settings(BaseSettings):
@@ -81,6 +92,18 @@ class Settings(BaseSettings):
     ALERT_AUTO_RCA: bool = True
     ALERT_AUTO_RUNBOOK: bool = True
 
+    # Notifications (see app/services/notifier.py)
+    NOTIFY_SLACK_WEBHOOK_URL: str | None = None
+    NOTIFY_WEBHOOK_URLS: List[str] = Field(default_factory=list)
+    NOTIFY_WEBHOOK_SECRET: str | None = None  # HMAC-SHA256 signs generic webhook bodies
+    NOTIFY_EVENTS: List[NotifyEvent] = Field(
+        default_factory=lambda: ["incident_created", "rca_completed", "runbook_completed", "incident_resolved"]
+    )
+    NOTIFY_MIN_SEVERITY: SeverityName = "WARN"
+    NOTIFY_TIMEOUT_SECONDS: float = 5.0
+    # Base URL used for incident links in notifications, e.g. https://ai.example.com
+    PUBLIC_BASE_URL: str | None = None
+
     # Sent as X-Fault-Token when scenarios reconfigure payment-service
     PAYMENT_FAULT_INJECTION_TOKEN: str | None = None
 
@@ -96,8 +119,20 @@ class Settings(BaseSettings):
     AI_MAX_RETRIES: int = 2
     AI_RETRY_BACKOFF_SECONDS: float = 0.5
     AI_ENABLE_FALLBACK: bool = True  # fall back to mock if primary fails
-    API_KEY: str | None = None  # if set, require X-API-Key header
     ENABLE_AUTH: bool = False  # master switch for API key auth
+    API_KEY: str | None = None  # full-access key (all scopes)
+    # Named, scoped keys, e.g. {"grafana": {"key": "...", "scopes": ["read"]},
+    #                           "alertmanager": {"key": "...", "scopes": ["alerts"]}}
+    API_KEYS: Dict[str, APIKeySpec] = Field(default_factory=dict)
+    # Accept ?api_key= (leaks into logs/history; header or Bearer preferred)
+    ALLOW_API_KEY_QUERY_PARAM: bool = False
+
+    # Per-client rate limits (client = API key name, or IP when auth is off).
+    # In-process: with several replicas each enforces its own limit.
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_PER_MINUTE: int = 300
+    # Stricter limit for endpoints that call the AI model (cost control)
+    AI_RATE_LIMIT_PER_MINUTE: int = 30
 
     # --- Persistence --------------------------------------------------------
     # If set (e.g. postgresql+psycopg2://user:pass@postgres:5432/ai_incidents),

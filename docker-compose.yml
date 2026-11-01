@@ -176,6 +176,7 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-data:
   prometheus-data:
   loki-data:
   tempo-data:
