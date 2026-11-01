@@ -1,0 +1,169 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ai
+      POSTGRES_PASSWORD: ai
+      POSTGRES_DB: ai_incidents
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - observability-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai -d ai_incidents"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ai-service:
+    build:
+      context: ./services/ai-service
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./services/ai-service/.env
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=ai-service
+      - PROMETHEUS_URL=http://prometheus:9090
+      - LOKI_URL=http://loki:3100
+      - TEMPO_URL=http://tempo:3200
+      - DATABASE_URL=postgresql+psycopg2://ai:ai@postgres:5432/ai_incidents
+    networks:
+      - observability-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+  # --- Week 5: Observability stack ------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus metrics exporter (scraped by Prometheus)
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - observability-net
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - observability-net
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - observability-net
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    user: "0"   # run as root so local storage dirs can be created (local-dev only)
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP API / query
+    # OTLP gRPC (4317) is internal only – collector reaches tempo:4317 on the docker network
+    networks:
+      - observability-net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_USERS_DEFAULT_THEME=dark
+    volumes:
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - observability-net
+    restart: unless-stopped
+
+  # --- Week 6: Sample microservices -----------------------------------------
+  payment-service:
+    build:
+      context: ./services/payment-service
+    ports:
+      - "8002:8002"
+    env_file:
+      - ./services/payment-service/.env
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=payment-service
+    networks:
+      - observability-net
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+
+  order-service:
+    build:
+      context: ./services/order-service
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./services/order-service/.env
+    environment:
+      - PAYMENT_SERVICE_URL=http://payment-service:8002
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_SERVICE_NAME=order-service
+    networks:
+      - observability-net
+    depends_on:
+      - payment-service
+      - otel-collector
+    restart: unless-stopped
+
+networks:
+  observability-net:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  grafana-data:

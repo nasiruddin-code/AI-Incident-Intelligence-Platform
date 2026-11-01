@@ -1,0 +1,57 @@
+# Tempo single-node config for local development (Week 5)
+
+server:
+  http_listen_port: 3200
+  log_level: info
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+
+ingester:
+  max_block_duration: 5m
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+
+compactor:
+  compaction:
+    compaction_window: 1h
+    max_block_bytes: 100_000_000
+    block_retention: 24h
+    compacted_block_retention: 10m
+  ring:
+    kvstore:
+      store: inmemory
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+    pool:
+      max_workers: 100
+      queue_depth: 10000
+
+querier:
+  max_concurrent_queries: 20
+
+query_frontend:
+  search:
+    max_duration: 0s
+    concurrent_jobs: 10
+  max_outstanding_per_tenant: 2000
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors: []

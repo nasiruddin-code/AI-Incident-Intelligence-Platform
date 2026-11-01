@@ -1,0 +1,44 @@
+groups:
+  - name: ai-observability-platform
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Target {{ $labels.job }} is down"
+          description: "Prometheus target {{ $labels.instance }} has been down for more than 1 minute."
+
+      - alert: HighPaymentFailureRate
+        expr: |
+          sum(rate(payments_total{status="failed"}[5m]))
+          /
+          clamp_min(sum(rate(payments_total[5m])), 0.001) > 0.3
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High payment failure rate"
+          description: "More than 30% of payments are failing over the last 5 minutes."
+
+      - alert: HighOrderFailureRate
+        expr: |
+          sum(rate(orders_total{status="payment_failed"}[5m]))
+          /
+          clamp_min(sum(rate(orders_total[5m])), 0.001) > 0.3
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High order payment-failure rate"
+          description: "More than 30% of orders end in payment_failed."
+
+      - alert: ElevatedPaymentLatency
+        expr: histogram_quantile(0.95, sum(rate(payment_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated payment latency (p95 > 1s)"
+          description: "Payment processing p95 latency is above 1 second."

@@ -1,0 +1,63 @@
+# OpenTelemetry Collector – central telemetry pipeline (Week 5)
+# Receives OTLP from applications, batches, and exports to backends.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 400
+    spike_limit_mib: 100
+
+exporters:
+  # Metrics → Prometheus (scraped on :8889)
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: otel
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # Logs → Loki
+  loki:
+    endpoint: "http://loki:3100/loki/api/v1/push"
+    default_labels_enabled:
+      exporter: false
+      job: true
+
+  # Traces → Tempo (OTLP gRPC)
+  otlp/tempo:
+    endpoint: "tempo:4317"
+    tls:
+      insecure: true
+
+  # Debug (optional – useful while developing)
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/tempo, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [loki, debug]
+
+  telemetry:
+    logs:
+      level: info

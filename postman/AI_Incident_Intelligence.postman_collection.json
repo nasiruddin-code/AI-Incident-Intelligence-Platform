@@ -1,0 +1,620 @@
+{
+  "info": {
+    "name": "AI Incident Intelligence Platform",
+    "description": "Complete API collection for the AI Observability / Incident Intelligence MVP (Weeks 1\u201316).\n\nServices:\n- AI Service :8000\n- Order Service :8001\n- Payment Service :8002\n\nSuggested flow: Health \u2192 Create Order \u2192 Build Context \u2192 Correlate \u2192 RCA \u2192 Runbook \u2192 Agent \u2192 E2E.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "ai_base",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "order_base",
+      "value": "http://localhost:8001"
+    },
+    {
+      "key": "payment_base",
+      "value": "http://localhost:8002"
+    },
+    {
+      "key": "incident_id",
+      "value": ""
+    },
+    {
+      "key": "api_key",
+      "value": ""
+    },
+    {
+      "key": "order_id",
+      "value": ""
+    },
+    {
+      "key": "payment_id",
+      "value": ""
+    },
+    {
+      "key": "trace_id",
+      "value": ""
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{api_key}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "0. Health",
+      "item": [
+        {
+          "name": "AI Service \u2014 Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/health",
+            "description": "AI service liveness."
+          }
+        },
+        {
+          "name": "AI Service \u2014 Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/health/ready",
+            "description": "Shows active AI provider."
+          }
+        },
+        {
+          "name": "Order Service \u2014 Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{order_base}}/api/v1/health",
+            "description": ""
+          }
+        },
+        {
+          "name": "Order Service \u2014 Ready",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{order_base}}/api/v1/health/ready",
+            "description": "Pings payment-service."
+          }
+        },
+        {
+          "name": "Payment Service \u2014 Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment_base}}/api/v1/health",
+            "description": ""
+          }
+        },
+        {
+          "name": "Payment Service \u2014 Ready",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment_base}}/api/v1/health/ready",
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Sample Microservices",
+      "item": [
+        {
+          "name": "Create Order (calls Payment)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{order_base}}/api/v1/orders",
+            "description": "Creates order and calls payment-service. Saves order_id/payment_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_id\": \"postman-cust-1\",\n  \"items\": [\n    {\n      \"sku\": \"SKU-001\",\n      \"name\": \"Widget\",\n      \"quantity\": 2,\n      \"unit_price\": 19.99\n    }\n  ],\n  \"currency\": \"USD\",\n  \"payment_method\": \"card\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const d = pm.response.json();",
+                  "  if (d.order_id) pm.collectionVariables.set('order_id', d.order_id);",
+                  "  if (d.payment_id) pm.collectionVariables.set('payment_id', d.payment_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Order by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{order_base}}/api/v1/orders/{{order_id}}",
+            "description": ""
+          }
+        },
+        {
+          "name": "List Orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{order_base}}/api/v1/orders",
+            "description": ""
+          }
+        },
+        {
+          "name": "Create Payment (direct)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment_base}}/api/v1/payments",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"manual-ord-1\",\n  \"amount\": 49.99,\n  \"currency\": \"USD\",\n  \"customer_id\": \"postman-cust-1\",\n  \"payment_method\": \"card\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const d = pm.response.json();",
+                  "  if (d.payment_id) pm.collectionVariables.set('payment_id', d.payment_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Payment by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment_base}}/api/v1/payments/{{payment_id}}",
+            "description": ""
+          }
+        },
+        {
+          "name": "List Payments by Order",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment_base}}/api/v1/payments/by-order/{{order_id}}",
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Log Analysis",
+      "item": [
+        {
+          "name": "Analyze Log",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/logs/analyze",
+            "description": "Week 2-3 AI log analysis (mock or Gemini).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"log_content\": \"2026-09-30T10:00:00Z ERROR OrderService: connection timeout to PaymentService after 5000ms\",\n  \"service_name\": \"order-service\",\n  \"context\": \"Started right after a deploy\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Telemetry Ingest",
+      "item": [
+        {
+          "name": "Ingest Log Record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/telemetry/logs",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"timestamp\": \"2026-09-30T10:00:00Z\",\n  \"severity\": \"ERROR\",\n  \"body\": \"Payment FAILED gateway timeout\",\n  \"attributes\": {},\n  \"resource\": {\n    \"service_name\": \"payment-service\",\n    \"service_version\": \"0.1.0\",\n    \"environment\": \"development\",\n    \"attributes\": {}\n  },\n  \"trace_id\": \"abc123trace\",\n  \"span_id\": \"span001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ingest Metric Point",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/telemetry/metrics",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"payments_total\",\n  \"type\": \"COUNTER\",\n  \"value\": 5,\n  \"timestamp\": \"2026-09-30T10:00:00Z\",\n  \"attributes\": {\n    \"status\": \"failed\"\n  },\n  \"resource\": {\n    \"service_name\": \"payment-service\",\n    \"attributes\": {}\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Ingest Span",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/telemetry/traces",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trace_id\": \"abc123trace\",\n  \"span_id\": \"span001\",\n  \"name\": \"payment.process\",\n  \"start_time\": \"2026-09-30T10:00:00Z\",\n  \"end_time\": \"2026-09-30T10:00:02Z\",\n  \"status\": \"ERROR\",\n  \"attributes\": {},\n  \"resource\": {\n    \"service_name\": \"payment-service\",\n    \"attributes\": {}\n  }\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Incidents",
+      "item": [
+        {
+          "name": "Create Incident Shell",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/incidents",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Payment outage (manual shell)\",\n  \"severity\": \"ERROR\",\n  \"affected_services\": [\n    \"payment-service\",\n    \"order-service\"\n  ],\n  \"notes\": \"Created from Postman\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const d = pm.response.json();",
+                  "  const id = d.incident_id || (d.incident && d.incident.incident_id);",
+                  "  if (id) pm.collectionVariables.set('incident_id', id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Build Context from Evidence",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/incidents/context",
+            "description": "Week 8 \u2014 builds IncidentContext; saves incident_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Payment gateway timeout\",\n  \"severity\": \"ERROR\",\n  \"affected_services\": [\n    \"order-service\",\n    \"payment-service\"\n  ],\n  \"scenario\": \"payment_timeout\",\n  \"logs\": [\n    {\n      \"timestamp\": \"2026-09-30T10:00:00Z\",\n      \"severity\": \"ERROR\",\n      \"body\": \"Payment FAILED gateway timeout\",\n      \"attributes\": {},\n      \"resource\": {\n        \"service_name\": \"payment-service\",\n        \"attributes\": {}\n      },\n      \"trace_id\": \"trace-postman-001\",\n      \"span_id\": \"span-pay-1\"\n    },\n    {\n      \"timestamp\": \"2026-09-30T10:00:00Z\",\n      \"severity\": \"ERROR\",\n      \"body\": \"Order PAYMENT_FAILED order_id=ord-1\",\n      \"attributes\": {},\n      \"resource\": {\n        \"service_name\": \"order-service\",\n        \"attributes\": {}\n      },\n      \"trace_id\": \"trace-postman-001\",\n      \"span_id\": \"span-ord-1\"\n    }\n  ],\n  \"metrics\": [\n    {\n      \"name\": \"payments_total\",\n      \"type\": \"COUNTER\",\n      \"value\": 8,\n      \"timestamp\": \"2026-09-30T10:00:00Z\",\n      \"attributes\": {\n        \"status\": \"failed\"\n      },\n      \"resource\": {\n        \"service_name\": \"payment-service\",\n        \"attributes\": {}\n      }\n    }\n  ],\n  \"traces\": [\n    {\n      \"trace_id\": \"trace-postman-001\",\n      \"span_id\": \"span-ord-1\",\n      \"name\": \"order.create\",\n      \"start_time\": \"2026-09-30T10:00:00Z\",\n      \"end_time\": \"2026-09-30T10:00:02Z\",\n      \"status\": \"ERROR\",\n      \"attributes\": {},\n      \"resource\": {\n        \"service_name\": \"order-service\",\n        \"attributes\": {}\n      }\n    },\n    {\n      \"trace_id\": \"trace-postman-001\",\n      \"span_id\": \"span-pay-1\",\n      \"parent_span_id\": \"span-ord-1\",\n      \"name\": \"payment.process\",\n      \"start_time\": \"2026-09-30T10:00:00Z\",\n      \"end_time\": \"2026-09-30T10:00:02Z\",\n      \"status\": \"ERROR\",\n      \"attributes\": {},\n      \"resource\": {\n        \"service_name\": \"payment-service\",\n        \"attributes\": {}\n      }\n    }\n  ],\n  \"notes\": \"Postman sample with correlated evidence\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const d = pm.response.json();",
+                  "  const id = d.incident_id || (d.incident && d.incident.incident_id);",
+                  "  if (id) pm.collectionVariables.set('incident_id', id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Run Failure Scenario",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/incidents/scenarios/run",
+            "description": "From host use localhost:8001. Inside Docker network use http://order-service:8001.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"payment_timeout\",\n  \"order_count\": 5,\n  \"order_service_url\": \"http://localhost:8001\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const d = pm.response.json();",
+                  "  const id = d.incident_id || (d.incident && d.incident.incident_id);",
+                  "  if (id) pm.collectionVariables.set('incident_id', id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Incidents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents",
+            "description": ""
+          }
+        },
+        {
+          "name": "Get Incident by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}",
+            "description": ""
+          }
+        },
+        {
+          "name": "Update Incident Status",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}/status?new_status=INVESTIGATING",
+            "description": "OPEN | INVESTIGATING | RESOLVED | CLOSED"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Correlation / RCA / Runbook",
+      "item": [
+        {
+          "name": "Correlate Incident",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}/correlate",
+            "description": "Week 9 \u2014 links, anomalies, severity score."
+          }
+        },
+        {
+          "name": "Run RCA",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}/rca?run_correlation=true",
+            "description": "Week 10 \u2014 AI root cause analysis."
+          }
+        },
+        {
+          "name": "Generate Runbook",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}/runbook",
+            "description": "Week 11 \u2014 steps + remediation + verification."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Investigation Agent",
+      "item": [
+        {
+          "name": "Agent Investigate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/agent/investigate",
+            "description": "Week 12 \u2014 full tool chain.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incident_id\": \"{{incident_id}}\",\n  \"question\": \"What caused the payment failures?\",\n  \"run_correlation\": true,\n  \"run_rca\": true,\n  \"run_runbook\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Agent Investigate (latest)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/agent/investigate",
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Summarize the most recent incident\",\n  \"run_correlation\": true,\n  \"run_rca\": true,\n  \"run_runbook\": false\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Observability Queries",
+      "item": [
+        {
+          "name": "Observability Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/observability/health",
+            "description": ""
+          }
+        },
+        {
+          "name": "Query Prometheus (up)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/observability/metrics?query=up",
+            "description": ""
+          }
+        },
+        {
+          "name": "Query Prometheus (orders_total)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/observability/metrics?query=orders_total",
+            "description": ""
+          }
+        },
+        {
+          "name": "Query Loki Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/observability/logs?query={job=~\".+\"}&lookback_seconds=3600&limit=50",
+            "description": ""
+          }
+        },
+        {
+          "name": "Search Tempo Traces",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/observability/traces?service=order-service&lookback_seconds=3600",
+            "description": "Create an order first so traces exist."
+          }
+        },
+        {
+          "name": "Get Trace by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/observability/traces/{{trace_id}}",
+            "description": ""
+          }
+        },
+        {
+          "name": "AI Service /metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/metrics",
+            "description": "Prometheus exposition for Grafana."
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. E2E Workflow",
+      "item": [
+        {
+          "name": "Run Full E2E Pipeline",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/e2e/run",
+            "description": "Week 15 \u2014 context \u2192 correlate \u2192 RCA \u2192 runbook.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Postman E2E payment failure drill\",\n  \"simulate_payment_failure\": true,\n  \"run_correlation\": true,\n  \"run_rca\": true,\n  \"run_runbook\": true,\n  \"check_observability\": true\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const d = pm.response.json();",
+                  "  const id = d.incident_id || (d.incident && d.incident.incident_id);",
+                  "  if (id) pm.collectionVariables.set('incident_id', id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
