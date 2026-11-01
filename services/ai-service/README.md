@@ -119,6 +119,31 @@ configured, protected routes return 503 instead of running unauthenticated.
 with `Retry-After`; responses carry `X-RateLimit-Limit` / `X-RateLimit-Remaining`.
 Limits are per process — with several replicas, each enforces its own.
 
+## Baseline anomaly detection
+
+`POST /api/v1/incidents/{id}/baseline` compares each affected service with
+its own recent history in Prometheus, instead of fixed thresholds:
+
+| Signal | Query (per service) | Flags |
+|---|---|---|
+| `request_rate` | HTTP requests/s | drop or spike |
+| `http_error_ratio` | share of 5xx responses | increase |
+| `latency_avg` | mean server latency (s) | increase |
+| `failure_ratio` | share of `otel_*_total` business counters whose `status` contains "fail" | increase — catches failures that still return HTTP 2xx (e.g. declined payments) |
+
+The incident window (at least 5 min) is compared with the preceding hour
+(`BASELINE_LOOKBACK_SECONDS`) using a robust z-score — median and MAD, so a
+few spikes in the baseline neither hide nor fake an anomaly. A signal is
+anomalous at `|z| >= BASELINE_Z_THRESHOLD` (3) *and* a minimum absolute change,
+so a quiet service doesn't alert on noise; too little history is reported as
+"insufficient data" rather than guessed. Results are stored on the incident
+(`metadata.baseline`); correlation turns anomalous signals into
+`baseline_<signal>` findings that raise the severity score and appear in the
+RCA prompt. Alertmanager-driven investigations run it automatically
+(`BASELINE_ENABLED`), and the planner agent has an `analyze_baseline` tool.
+The fixed-threshold rules still run on the incident's own evidence, so
+offline/synthetic incidents keep working without Prometheus.
+
 ## Database: migrations and concurrency
 
 **Migrations.** The schema is managed by Alembic (`app/db/migrations/`) and

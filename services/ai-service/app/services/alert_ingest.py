@@ -33,6 +33,7 @@ from app.services.notifier import notify, rca_details, runbook_details
 from app.services.rca_engine import RCAEngine
 from app.services.runbook_engine import RunbookEngine
 from app.services.telemetry_enrichment import TelemetryEnrichmentService
+from app.services.baseline import BaselineAnalyzer
 
 logger = get_logger(__name__)
 
@@ -183,6 +184,8 @@ async def investigate(incident_id: str, provider: AIProvider, settings: Settings
 
     if settings.ALERT_AUTO_ENRICH:
         await step("enrich", lambda: TelemetryEnrichmentService(settings).enrich(incident_id))
+    if settings.BASELINE_ENABLED:
+        await step("baseline", lambda: BaselineAnalyzer(settings).analyze(incident_id))
     correlation = await step("correlate", lambda: run_in_threadpool(correlate_incident, incident_id))
     if settings.ALERT_AUTO_RCA:
         rca = await step("rca", lambda: RCAEngine(provider).analyze(

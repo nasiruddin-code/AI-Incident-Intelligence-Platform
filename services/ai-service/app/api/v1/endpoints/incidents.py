@@ -7,10 +7,12 @@ from starlette.concurrency import run_in_threadpool
 from app.core.logging import get_logger
 from app.core.dependencies import RCAEngineDep, RunbookEngineDep, SettingsDep
 from app.services.telemetry_enrichment import TelemetryEnrichmentService
+from app.services.baseline import BaselineAnalyzer
 from app.schemas.rca import RCAResponse
 from app.schemas.runbook import RunbookResponse
 from app.schemas.incident import (
     BuildContextRequest,
+    BaselineResult,
     CorrelationResult,
     EnrichmentResult,
     EnrichRequest,
@@ -225,6 +227,24 @@ async def enrich_incident(
             lookback_seconds=payload.lookback_seconds,
             services=payload.services,
         )
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+
+@router.post(
+    "/{incident_id}/baseline",
+    response_model=BaselineResult,
+    summary="Compare affected services with their own recent history (Prometheus)",
+)
+async def analyze_baseline(incident_id: str, settings: SettingsDep) -> BaselineResult:
+    """For each affected service, compare request rate, 5xx ratio, latency and
+    business failure ratio in the incident window against the preceding
+    BASELINE_LOOKBACK_SECONDS using robust z-scores. Results are stored on the
+    incident (metadata.baseline); the next correlation turns anomalous signals
+    into findings that raise the severity score and inform RCA.
+    """
+    try:
+        return await BaselineAnalyzer(settings).analyze(incident_id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 

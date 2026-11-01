@@ -36,9 +36,12 @@ def _webhook(*alerts, status="firing", group="{}:{alertname=\"HighPaymentFailure
 
 
 @pytest.fixture(autouse=True)
-def no_live_telemetry():
+def no_live_telemetry(monkeypatch):
+    from app.core.config import get_settings
+
     incident_store.clear()
-    with patch("app.services.alert_ingest.TelemetryEnrichmentService.enrich", new_callable=AsyncMock) as enrich:
+    monkeypatch.setattr(get_settings(), "BASELINE_ENABLED", True)
+    with patch("app.services.alert_ingest.TelemetryEnrichmentService.enrich", new_callable=AsyncMock) as enrich,          patch("app.services.alert_ingest.BaselineAnalyzer.analyze", new_callable=AsyncMock):
         yield enrich
 
 
@@ -59,7 +62,7 @@ def test_firing_alert_creates_and_investigates_incident(client, no_live_telemetr
     # Background investigation ran (TestClient runs background tasks before returning)
     no_live_telemetry.assert_awaited_once()
     assert incident.metadata["auto_investigation"]["steps"] == {
-        "enrich": "ok", "correlate": "ok", "rca": "ok", "runbook": "ok"
+        "enrich": "ok", "baseline": "ok", "correlate": "ok", "rca": "ok", "runbook": "ok"
     }
     assert incident.metadata["rca_primary_cause"]
     assert incident.metadata["runbook_title"]

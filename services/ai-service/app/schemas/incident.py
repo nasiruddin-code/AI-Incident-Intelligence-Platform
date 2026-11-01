@@ -127,6 +127,29 @@ class IncidentSummary(BaseModel):
     evidence_summary: Optional[str] = None
 
 
+class BaselineSignalResult(BaseModel):
+    service: str
+    signal: str
+    unit: str = ""
+    anomalous: bool
+    baseline_median: Optional[float] = None
+    baseline_mad: Optional[float] = None
+    current_median: Optional[float] = None
+    z_score: Optional[float] = Field(None, description="Robust z-score: (current - median) / (1.4826 * MAD)")
+    baseline_points: int = 0
+    current_points: int = 0
+    reason: str = ""
+
+
+class BaselineResult(BaseModel):
+    incident_id: str
+    analyzed_at: datetime
+    baseline_window: TimeWindow
+    incident_window: TimeWindow
+    signals: List[BaselineSignalResult]
+    anomalies: int = Field(0, description="Number of anomalous signals")
+
+
 class EnrichRequest(BaseModel):
     """Pull live evidence from Prometheus / Loki / Tempo into an incident."""
     lookback_seconds: Optional[int] = Field(
@@ -181,7 +204,9 @@ class AnomalyFinding(BaseModel):
     """A detected anomaly in the incident evidence."""
     anomaly_type: str = Field(
         ...,
-        description="error_rate_spike | latency_spike | error_log_burst | error_span_burst | service_fanout",
+        description="error_rate_spike | latency_spike | error_log_burst | error_span_burst | service_fanout | "
+        "baseline_<signal> (deviation from the service's own history: baseline_request_rate, "
+        "baseline_http_error_ratio, baseline_latency_avg, baseline_failure_ratio)",
     )
     service: Optional[str] = None
     description: str

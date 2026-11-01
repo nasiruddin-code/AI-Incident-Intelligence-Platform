@@ -35,6 +35,7 @@ FINDING_KEYS = {
     "get_incident": "incident",
     "search_evidence": "evidence",
     "collect_live_telemetry": "live_telemetry",
+    "analyze_baseline": "baseline",
     "correlate": "correlation",
     "run_rca": "rca",
     "generate_runbook": "runbook",
@@ -48,6 +49,7 @@ NEEDS_INCIDENT = {
     "get_incident",
     "search_evidence",
     "collect_live_telemetry",
+    "analyze_baseline",
     "correlate",
     "run_rca",
     "generate_runbook",
@@ -112,6 +114,7 @@ async def _dispatch(
 
     async_tools: Dict[str, Callable[[], Awaitable[Dict[str, Any]]]] = {
         "collect_live_telemetry": lambda: agent_tools.tool_collect_live_telemetry(incident_id),
+        "analyze_baseline": lambda: agent_tools.tool_analyze_baseline(incident_id),
         "run_rca": lambda: agent_tools.tool_run_rca(incident_id, provider),
         "generate_runbook": lambda: agent_tools.tool_generate_runbook(incident_id, provider),
         "query_prometheus": lambda: agent_tools.tool_query_prometheus(args["promql"]),

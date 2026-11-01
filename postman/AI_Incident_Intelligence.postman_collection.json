@@ -496,6 +496,15 @@
           }
         },
         {
+          "name": "Baseline Anomaly Analysis",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}/baseline",
+            "description": "Compare affected services with their own last hour in Prometheus (request rate, 5xx ratio, latency, business failure ratio). Run before Correlate."
+          }
+        },
+        {
           "name": "Correlate Incident",
           "request": {
             "method": "POST",

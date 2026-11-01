@@ -114,6 +114,15 @@ class Settings(BaseSettings):
     ENRICH_MAX_LOGS_PER_SERVICE: int = 100
     ENRICH_MAX_METRICS_PER_SERVICE: int = 50
     ENRICH_MAX_TRACES_PER_SERVICE: int = 5
+    # Baseline anomaly detection (POST /incidents/{id}/baseline)
+    BASELINE_ENABLED: bool = True  # also run during Alertmanager auto-investigation
+    BASELINE_LOOKBACK_SECONDS: int = 3600  # how much history defines "normal"
+    BASELINE_GAP_SECONDS: int = 60  # excluded between baseline and incident
+    BASELINE_MIN_WINDOW_SECONDS: int = 300  # incident window is at least this long
+    BASELINE_STEP_SECONDS: int = 30
+    BASELINE_MIN_POINTS: int = 10
+    BASELINE_Z_THRESHOLD: float = 3.0
+
     # Namespace the OTel collector's prometheus exporter adds to metric names
     ENRICH_METRIC_PREFIX: str = "otel_"
 

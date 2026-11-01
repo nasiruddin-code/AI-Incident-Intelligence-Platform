@@ -180,6 +180,7 @@ TOOL_DESCRIPTIONS = {
     "get_incident": "Get summary of an incident (counts of logs/metrics/spans, notes, metadata). Args: incident_id.",
     "search_evidence": "Search the incident's stored logs/spans/metrics by keyword. Args: incident_id, query (keyword; empty = all).",
     "collect_live_telemetry": "Pull live logs, metrics and traces for the incident's services and time window from Loki/Prometheus/Tempo into the incident. Args: incident_id.",
+    "analyze_baseline": "Compare the incident's services with their own recent history in Prometheus (request rate, 5xx ratio, latency, business failure ratio); run before correlate. Args: incident_id.",
     "correlate": "Run correlation, anomaly detection, and severity scoring on an incident. Args: incident_id.",
     "run_rca": "Run AI-assisted root cause analysis on an incident. Args: incident_id.",
     "generate_runbook": "Generate an AI runbook and remediation plan for an incident. Args: incident_id.",
@@ -199,6 +200,22 @@ async def tool_collect_live_telemetry(incident_id: str) -> Dict[str, Any]:
     except KeyError:
         return {"error": f"Incident {incident_id} not found"}
     return result.model_dump(mode="json")
+
+
+async def tool_analyze_baseline(incident_id: str) -> Dict[str, Any]:
+    from app.core.config import get_settings
+    from app.services.baseline import BaselineAnalyzer
+    try:
+        result = await BaselineAnalyzer(get_settings()).analyze(incident_id)
+    except KeyError:
+        return {"error": f"Incident {incident_id} not found"}
+    return {
+        "anomalies": result.anomalies,
+        "signals": [
+            {"service": s.service, "signal": s.signal, "anomalous": s.anomalous, "detail": s.reason}
+            for s in result.signals
+        ],
+    }
 
 
 async def tool_get_trace(trace_id: str) -> Dict[str, Any]:

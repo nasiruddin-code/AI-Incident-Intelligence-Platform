@@ -17,6 +17,7 @@ from app.schemas.incident import (
 )
 from app.schemas.telemetry import LogRecord, MetricPoint, SeverityLevel, Span, SpanStatus
 from app.services import incident_store
+from app.services.baseline import findings_from
 
 logger = get_logger(__name__)
 
@@ -297,7 +298,11 @@ def correlate_incident(incident_id: str) -> CorrelationResult:
         service_links, service_graph = _correlate_by_service(logs, metrics, traces)
         links = trace_links + service_links
 
-        anomalies = _detect_anomalies(logs, metrics, traces)
+        # Rule-based findings on the evidence, plus any stored baseline-deviation
+        # findings (POST /incidents/{id}/baseline) from live Prometheus history.
+        anomalies = _detect_anomalies(logs, metrics, traces) + findings_from(
+            incident.metadata.get("baseline")
+        )
         severity = _score_severity(incident, anomalies)
 
         # Update incident severity if scoring is higher

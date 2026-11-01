@@ -8,6 +8,7 @@ AgentToolName = Literal[
     "get_incident",
     "search_evidence",
     "collect_live_telemetry",
+    "analyze_baseline",
     "correlate",
     "run_rca",
     "generate_runbook",
