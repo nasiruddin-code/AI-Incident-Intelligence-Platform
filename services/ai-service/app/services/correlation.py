@@ -30,6 +30,8 @@ _SEV_RANK = {
     SeverityLevel.FATAL: 5,
 }
 
+_CORRELATION_MARKER = " | correlated: "
+
 
 def _correlate_by_trace_id(
     logs: List[LogRecord],
@@ -306,9 +308,12 @@ def correlate_incident(incident_id: str) -> CorrelationResult:
         "anomaly_count": len(anomalies),
         "correlation_link_count": len(links),
     }
+    # Replace (not append) any previous correlation suffix so re-running
+    # correlation (agent, RCA, API) keeps the summary stable.
+    base_summary = (incident.evidence_summary or "").split(_CORRELATION_MARKER)[0]
     incident.evidence_summary = (
-        f"{incident.evidence_summary or ''} | "
-        f"correlated: {len(links)} links, {len(anomalies)} anomalies, "
+        f"{base_summary}{_CORRELATION_MARKER}"
+        f"{len(links)} links, {len(anomalies)} anomalies, "
         f"severity_score={severity.score}"
     ).strip(" |")
     incident_store.save(incident)

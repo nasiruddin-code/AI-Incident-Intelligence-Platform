@@ -28,13 +28,42 @@ uvicorn app.main:app --reload
 
 Open http://127.0.0.1:8000/docs for interactive Swagger docs.
 
-By default `AI_PROVIDER=mock`, so it runs with **no API key**. To use real
-Gemini, set in `.env`:
+By default `AI_PROVIDER=mock`, so it runs with **no API key**. To use a real
+model, set in `.env` (see `.env.example` for all options):
 
 ```
-AI_PROVIDER=gemini
-GEMINI_API_KEY=your-key-here
+AI_PROVIDER=anthropic          # or gemini | openai | ollama
+ANTHROPIC_API_KEY=your-key     # GEMINI_API_KEY / OPENAI_API_KEY for the others
+AI_FALLBACK_PROVIDERS=["ollama"]   # optional: tried in order if the primary fails
 ```
+
+| Provider | Default model | Notes |
+|---|---|---|
+| `anthropic` | `claude-opus-5-5` | Schema-validated output via `messages.parse`; server-side refusal fallback on (`ANTHROPIC_SERVER_FALLBACKS`) |
+| `gemini` | `gemini-2.5-flash` | |
+| `openai` | `gpt-4o-mini` | `OPENAI_BASE_URL` for any OpenAI-compatible endpoint |
+| `ollama` | `llama3.1` | Local models via `OLLAMA_BASE_URL` (OpenAI-compatible API, no key) |
+
+Each provider is retried `AI_MAX_RETRIES` times; then the next one in the chain is
+tried; then the mock fallback. Responses report who answered (`provider`) and
+`degraded: true` when it was the mock fallback.
+
+## Investigation agent
+
+`POST /api/v1/agent/investigate` runs in one of two modes (`AGENT_MODE`, or
+`"mode"` in the request):
+
+- **planner** — the model picks one tool per step (incident lookup, evidence
+  search, live telemetry, PromQL/LogQL/Tempo queries, correlation, RCA,
+  runbook), sees each result, and writes the final answer. Bounded by
+  `max_steps`; repeat calls are de-duplicated; tools disabled via
+  `run_rca` / `run_runbook` / `run_correlation` are not offered.
+- **fixed** — the deterministic pipeline (resolve → evidence → correlate →
+  RCA → runbook → summary).
+
+`auto` (default) uses the planner whenever a real model is configured, and the
+fixed pipeline with the mock provider or if the model is unavailable. The
+response's `mode` field says which ran; each step includes the model's `thought`.
 
 ## Run with Docker
 
@@ -104,12 +133,34 @@ curl -X POST http://localhost:8000/api/v1/incidents/context \
 curl -X POST http://localhost:8000/api/v1/incidents/scenarios/run \
   -H "Content-Type: application/json" \
   -d '{"scenario":"payment_timeout","order_count":5}'
+
+# List incidents (paginated, newest first; filters: status, severity)
+curl "http://localhost:8000/api/v1/incidents?status=OPEN&limit=20&offset=0"
+
+# Lightweight list without logs/metrics/traces (use this for dashboards / UIs)
+curl "http://localhost:8000/api/v1/incidents/summaries?severity=ERROR"
+
+# Pull live logs (Loki), metrics (Prometheus) and traces (Tempo) for the
+# incident's services and time window into the incident. Safe to re-run.
+curl -X POST http://localhost:8000/api/v1/incidents/$ID/enrich \
+  -H "Content-Type: application/json" -d '{"lookback_seconds": 900}'
 ```
+
+Enrichment queries Loki by `job=<service>`, Prometheus by
+`service_name=<service>` (stripping the collector's `otel_` prefix and turning
+`*_sum`/`*_count` into averages), and expands Tempo traces into spans. The
+response reports per-backend `fetched` / `added` counts and errors.
+
+`GET /incidents` returns at most `limit` incidents (default 50, max 500);
+`total` is the number matching the filters.
 
 
 ## Resilience & E2E (Week 15)
 
-- **AI fallback**: if Gemini fails, automatic retry then fall back to mock (`AI_ENABLE_FALLBACK=true`)
+- **AI fallback**: if Gemini fails, automatic retry then fall back to mock (`AI_ENABLE_FALLBACK=true`).
+  Log-analysis, RCA and runbook responses report `provider` (who actually answered) and
+  `degraded: true` when the fallback was used; RCA/runbook also persist `rca_degraded` /
+  `runbook_degraded` in incident metadata.
 - **API key auth** (optional): set `ENABLE_AUTH=true` and `API_KEY=secret`, pass `X-API-Key: secret`
 - **E2E workflow**:
 

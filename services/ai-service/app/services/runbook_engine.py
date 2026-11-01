@@ -64,7 +64,7 @@ class RunbookEngine:
             self._provider.name,
         )
 
-        result: RunbookResult = await self._provider.generate_structured(
+        result, info = await self._provider.generate_structured_with_info(
             prompt=prompt,
             response_model=RunbookResult,
             system_instruction=RUNBOOK_PROMPT.system_instruction,
@@ -75,14 +75,16 @@ class RunbookEngine:
             **incident.metadata,
             "runbook_title": result.title,
             "runbook_confidence": result.confidence,
-            "runbook_provider": self._provider.name,
+            "runbook_provider": info.provider,
+            "runbook_degraded": info.degraded,
             "remediation_count": len(result.remediation_actions),
         }
         incident_store.save(incident)
 
         return RunbookResponse(
             incident_id=incident_id,
-            provider=self._provider.name,
+            provider=info.provider,
+            degraded=info.degraded,
             runbook=result,
             rca_primary_cause=(incident.metadata or {}).get("rca_primary_cause"),
         )

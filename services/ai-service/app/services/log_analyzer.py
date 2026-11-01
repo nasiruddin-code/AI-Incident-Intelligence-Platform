@@ -22,7 +22,7 @@ class LogAnalyzerService:
             context=request.context or "none provided",
         )
 
-        result: LogAnalysisResult = await self._provider.generate_structured(
+        result, info = await self._provider.generate_structured_with_info(
             prompt=prompt,
             response_model=LogAnalysisResult,
             system_instruction=LOG_ANALYSIS_PROMPT.system_instruction,
@@ -30,6 +30,7 @@ class LogAnalyzerService:
 
         return LogAnalysisResponse(
             request_id=str(uuid.uuid4()),
-            provider=self._provider.name,
+            provider=info.provider,
+            degraded=info.degraded,
             analysis=result,
         )

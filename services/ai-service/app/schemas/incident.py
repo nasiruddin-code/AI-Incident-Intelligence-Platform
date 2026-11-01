@@ -96,8 +96,59 @@ class BuildContextRequest(BaseModel):
 
 
 class IncidentListResponse(BaseModel):
-    count: int
+    count: int = Field(..., description="Number of incidents in this page")
+    total: int = Field(0, description="Total incidents matching the filters")
+    limit: int = 50
+    offset: int = 0
     incidents: List[IncidentContext]
+
+
+class IncidentSummary(BaseModel):
+    """Incident without logs/metrics/traces — cheap to list."""
+    incident_id: str
+    title: str
+    status: IncidentStatus
+    severity: SeverityLevel
+    affected_services: List[str] = Field(default_factory=list)
+    scenario: Optional[ScenarioType] = None
+    evidence_summary: Optional[str] = None
+
+
+class EnrichRequest(BaseModel):
+    """Pull live evidence from Prometheus / Loki / Tempo into an incident."""
+    lookback_seconds: Optional[int] = Field(
+        None, ge=60, le=86400,
+        description="Window size ending at the incident end; default ENRICH_LOOKBACK_SECONDS",
+    )
+    services: Optional[List[str]] = Field(
+        None, description="Services to query; defaults to the incident's affected_services"
+    )
+
+
+class EnrichmentSourceStatus(BaseModel):
+    ok: bool
+    fetched: int = 0
+    added: int = 0
+    error: Optional[str] = None
+
+
+class EnrichmentResult(BaseModel):
+    incident_id: str
+    window: TimeWindow
+    services: List[str]
+    sources: Dict[str, EnrichmentSourceStatus]
+    logs_added: int
+    metrics_added: int
+    spans_added: int
+    evidence_summary: Optional[str] = None
+
+
+class IncidentSummaryListResponse(BaseModel):
+    count: int = Field(..., description="Number of incidents in this page")
+    total: int = Field(..., description="Total incidents matching the filters")
+    limit: int
+    offset: int
+    incidents: List[IncidentSummary]
 
 
 # --- Week 9: Correlation & Anomaly Detection --------------------------------

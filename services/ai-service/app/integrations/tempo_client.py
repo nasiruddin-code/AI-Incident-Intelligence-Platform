@@ -8,9 +8,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
-import httpx
-
 from app.core.logging import get_logger
+from app.integrations.http import get_http_client
 
 logger = get_logger(__name__)
 
@@ -21,10 +20,9 @@ class TempoClient:
         self.timeout = timeout
 
     async def get_trace(self, trace_id: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/api/traces/{trace_id}")
-            r.raise_for_status()
-            return r.json()
+        r = await get_http_client().get(f"{self.base_url}/api/traces/{trace_id}", timeout=self.timeout)
+        r.raise_for_status()
+        return r.json()
 
     async def search(
         self,
@@ -66,37 +64,34 @@ class TempoClient:
         elif service:
             params["tags"] = f"service.name={service}"
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/api/search", params=params)
-            # If TraceQL fails (older path), retry with classic tags only
-            if r.status_code >= 400 and service and "q" in params:
-                logger.info("TraceQL search failed (%s), retrying with tags", r.status_code)
-                params.pop("q", None)
-                params["tags"] = f"service.name={service}"
-                r = await client.get(f"{self.base_url}/api/search", params=params)
-            r.raise_for_status()
-            data = r.json()
+        client = get_http_client()
+        r = await client.get(f"{self.base_url}/api/search", params=params, timeout=self.timeout)
+        # If TraceQL fails (older path), retry with classic tags only
+        if r.status_code >= 400 and service and "q" in params:
+            logger.info("TraceQL search failed (%s), retrying with tags", r.status_code)
+            params.pop("q", None)
+            params["tags"] = f"service.name={service}"
+            r = await client.get(f"{self.base_url}/api/search", params=params, timeout=self.timeout)
+        r.raise_for_status()
+        data = r.json()
 
-            # Normalize response shapes
-            traces = data.get("traces") or data.get("Traces") or []
-            return {"traces": traces, "raw": data}
+        # Normalize response shapes
+        traces = data.get("traces") or data.get("Traces") or []
+        return {"traces": traces, "raw": data}
 
     async def search_tags(self) -> Dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/api/search/tags")
-            r.raise_for_status()
-            return r.json()
+        r = await get_http_client().get(f"{self.base_url}/api/search/tags", timeout=self.timeout)
+        r.raise_for_status()
+        return r.json()
 
     async def search_tag_values(self, tag: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/api/search/tag/{tag}/values")
-            r.raise_for_status()
-            return r.json()
+        r = await get_http_client().get(f"{self.base_url}/api/search/tag/{tag}/values", timeout=self.timeout)
+        r.raise_for_status()
+        return r.json()
 
     async def health(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                r = await client.get(f"{self.base_url}/ready")
-                return r.status_code == 200
+            r = await get_http_client().get(f"{self.base_url}/ready", timeout=3.0)
+            return r.status_code == 200
         except Exception:
             return False

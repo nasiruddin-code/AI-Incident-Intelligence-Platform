@@ -138,7 +138,7 @@ class RCAEngine:
             len(incident.traces),
         )
 
-        result: RCAResult = await self._provider.generate_structured(
+        result, info = await self._provider.generate_structured_with_info(
             prompt=prompt,
             response_model=RCAResult,
             system_instruction=RCA_PROMPT.system_instruction,
@@ -149,7 +149,8 @@ class RCAEngine:
             **incident.metadata,
             "rca_primary_cause": result.primary_cause,
             "rca_confidence": result.confidence,
-            "rca_provider": self._provider.name,
+            "rca_provider": info.provider,
+            "rca_degraded": info.degraded,
         }
         if result.summary:
             note_line = f"[RCA] {result.summary}"
@@ -158,6 +159,7 @@ class RCAEngine:
 
         return RCAResponse(
             incident_id=incident_id,
-            provider=self._provider.name,
+            provider=info.provider,
+            degraded=info.degraded,
             rca=result,
         )

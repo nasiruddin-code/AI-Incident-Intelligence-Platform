@@ -10,6 +10,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.telemetry import instrument_app, setup_telemetry, shutdown_telemetry
 from app.db.session import init_db
+from app.integrations.http import close_http_client
 
 logger = get_logger(__name__)
 
@@ -37,6 +38,7 @@ def _make_lifespan(settings: Settings):
             settings.AI_PROVIDER,
         )
         yield
+        await close_http_client()
         shutdown_telemetry()
         logger.info("Shutting down %s", settings.APP_NAME)
 

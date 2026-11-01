@@ -1,13 +1,22 @@
-"""LangGraph-style investigation agent workflow (Week 12).
+"""Investigation agent workflow (Week 12).
 
-Uses a StateGraph when langgraph is available; otherwise falls back to a
-deterministic sequential investigation path so the service still runs offline.
+Two modes:
+- planner: the model chooses tools step by step (app/agent/planner.py)
+- fixed:   a deterministic LangGraph StateGraph (resolve -> evidence ->
+           correlate -> rca -> runbook -> summarize), with a plain sequential
+           fallback if langgraph is unavailable
+
+AGENT_MODE=auto (default) uses the planner whenever a real model is
+configured, and the fixed pipeline with the mock provider or if the
+planner cannot run.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, TypedDict
 
 from app.agent import tools as agent_tools
+from app.agent.planner import run_planner
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.providers.base import AIProvider
 from app.schemas.agent import AgentInvestigateRequest, AgentInvestigateResponse, ToolCallRecord
@@ -53,11 +62,14 @@ async def run_investigation(
     req: AgentInvestigateRequest,
     provider: AIProvider,
 ) -> AgentInvestigateResponse:
-    """Execute the investigation workflow.
+    """Execute the investigation workflow (planner or fixed, see module docs)."""
+    mode = req.mode or get_settings().AGENT_MODE
+    if mode == "planner" or (mode == "auto" and provider.name != "mock"):
+        try:
+            return await run_planner(req, provider, _build_summary)
+        except Exception as exc:
+            logger.warning("Planner agent unavailable (%s); using fixed pipeline", exc)
 
-    Preferred path: LangGraph StateGraph (if importable).
-    Fallback: deterministic tool sequence that still produces a full report.
-    """
     try:
         return await _run_langgraph(req, provider)
     except Exception as exc:
@@ -341,6 +353,12 @@ def _build_summary(
         parts.append(
             f"Runbook '{rb.get('title')}' with {n_steps} steps and "
             f"{n_rem} remediation actions (confidence={rb.get('confidence')})."
+        )
+
+    if rca.get("degraded") or rb.get("degraded"):
+        parts.append(
+            "WARNING: the configured AI provider was unavailable; AI results "
+            "above came from the fallback provider and are not real analysis."
         )
 
     return " ".join(parts)

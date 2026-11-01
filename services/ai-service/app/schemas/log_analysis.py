@@ -33,4 +33,8 @@ class LogAnalysisResult(BaseModel):
 class LogAnalysisResponse(BaseModel):
     request_id: str
     provider: str
+    degraded: bool = Field(
+        False,
+        description="True if the configured AI provider failed and a fallback answered",
+    )
     analysis: LogAnalysisResult

@@ -1,7 +1,8 @@
 """Simple API-key access control (Week 15)."""
 from __future__ import annotations
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request, status
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import get_settings
@@ -38,8 +39,10 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         provided = request.headers.get("X-API-Key") or request.query_params.get("api_key")
         if provided != settings.API_KEY:
             logger.warning("Unauthorized request path=%s", path)
-            raise HTTPException(
+            # Middleware runs outside FastAPI's exception handlers, so raising
+            # HTTPException here would surface as a 500; respond directly.
+            return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or missing API key. Pass header X-API-Key.",
+                content={"detail": "Invalid or missing API key. Pass header X-API-Key."},
             )
         return await call_next(request)

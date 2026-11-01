@@ -3,9 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-import httpx
-
 from app.core.logging import get_logger
+from app.integrations.http import get_http_client
 
 logger = get_logger(__name__)
 
@@ -19,10 +18,11 @@ class PrometheusClient:
         params: Dict[str, str] = {"query": promql}
         if time:
             params["time"] = time
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/api/v1/query", params=params)
-            r.raise_for_status()
-            return r.json()
+        r = await get_http_client().get(
+            f"{self.base_url}/api/v1/query", params=params, timeout=self.timeout
+        )
+        r.raise_for_status()
+        return r.json()
 
     async def query_range(
         self,
@@ -32,22 +32,21 @@ class PrometheusClient:
         step: str = "15s",
     ) -> Dict[str, Any]:
         params = {"query": promql, "start": start, "end": end, "step": step}
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/api/v1/query_range", params=params)
-            r.raise_for_status()
-            return r.json()
+        r = await get_http_client().get(
+            f"{self.base_url}/api/v1/query_range", params=params, timeout=self.timeout
+        )
+        r.raise_for_status()
+        return r.json()
 
     async def targets(self) -> Dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/api/v1/targets")
-            r.raise_for_status()
-            return r.json()
+        r = await get_http_client().get(f"{self.base_url}/api/v1/targets", timeout=self.timeout)
+        r.raise_for_status()
+        return r.json()
 
     async def health(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                r = await client.get(f"{self.base_url}/-/healthy")
-                return r.status_code == 200
+            r = await get_http_client().get(f"{self.base_url}/-/healthy", timeout=3.0)
+            return r.status_code == 200
         except Exception:
             return False
 

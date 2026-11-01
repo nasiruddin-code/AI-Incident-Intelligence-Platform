@@ -63,6 +63,10 @@ class RunbookResponse(BaseModel):
     """API response wrapper."""
     incident_id: str
     provider: str
+    degraded: bool = Field(
+        False,
+        description="True if the configured AI provider failed and a fallback answered",
+    )
     runbook: RunbookResult
     rca_primary_cause: Optional[str] = Field(
         None,

@@ -1,17 +1,23 @@
 """Incident management + scenario endpoints (Week 8)."""
-from fastapi import APIRouter, HTTPException, status
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.logging import get_logger
-from app.core.dependencies import RCAEngineDep, RunbookEngineDep
+from app.core.dependencies import RCAEngineDep, RunbookEngineDep, SettingsDep
+from app.services.telemetry_enrichment import TelemetryEnrichmentService
 from app.schemas.rca import RCAResponse
 from app.schemas.runbook import RunbookResponse
 from app.schemas.incident import (
     BuildContextRequest,
     CorrelationResult,
+    EnrichmentResult,
+    EnrichRequest,
     IncidentContext,
     IncidentCreate,
     IncidentListResponse,
     IncidentStatus,
+    IncidentSummaryListResponse,
     ScenarioRunRequest,
     ScenarioRunResult,
     TimeWindow,
@@ -53,10 +59,42 @@ async def create_incident(payload: IncidentCreate) -> IncidentContext:
     return incident
 
 
-@router.get("", response_model=IncidentListResponse, summary="List all incidents")
-async def list_incidents() -> IncidentListResponse:
-    items = incident_store.list_all()
-    return IncidentListResponse(count=len(items), incidents=items)
+@router.get("", response_model=IncidentListResponse, summary="List incidents (paginated)")
+async def list_incidents(
+    status_filter: Optional[IncidentStatus] = Query(None, alias="status"),
+    severity: Optional[SeverityLevel] = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> IncidentListResponse:
+    """Full incidents (including evidence), newest first.
+
+    Prefer GET /incidents/summaries for dashboards and lists.
+    """
+    items, total = incident_store.list_page(
+        status=status_filter, severity=severity, limit=limit, offset=offset
+    )
+    return IncidentListResponse(
+        count=len(items), total=total, limit=limit, offset=offset, incidents=items
+    )
+
+
+@router.get(
+    "/summaries",
+    response_model=IncidentSummaryListResponse,
+    summary="List incident summaries (no evidence, paginated)",
+)
+async def list_incident_summaries(
+    status_filter: Optional[IncidentStatus] = Query(None, alias="status"),
+    severity: Optional[SeverityLevel] = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> IncidentSummaryListResponse:
+    items, total = incident_store.list_summaries(
+        status=status_filter, severity=severity, limit=limit, offset=offset
+    )
+    return IncidentSummaryListResponse(
+        count=len(items), total=total, limit=limit, offset=offset, incidents=items
+    )
 
 
 @router.get("/{incident_id}", response_model=IncidentContext, summary="Get incident by ID")
@@ -137,6 +175,32 @@ async def correlate(incident_id: str) -> CorrelationResult:
     """
     try:
         return correlate_incident(incident_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+
+@router.post(
+    "/{incident_id}/enrich",
+    response_model=EnrichmentResult,
+    summary="Pull live logs/metrics/traces from Loki, Prometheus and Tempo",
+)
+async def enrich_incident(
+    incident_id: str,
+    settings: SettingsDep,
+    payload: Optional[EnrichRequest] = None,
+) -> EnrichmentResult:
+    """Fetch evidence for the incident's services and time window from the
+    observability stack and merge it into the incident. Safe to re-run:
+    evidence already on the incident is skipped. A backend being down is
+    reported in `sources` rather than failing the request.
+    """
+    payload = payload or EnrichRequest()
+    try:
+        return await TelemetryEnrichmentService(settings).enrich(
+            incident_id,
+            lookback_seconds=payload.lookback_seconds,
+            services=payload.services,
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 

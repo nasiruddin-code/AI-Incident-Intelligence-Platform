@@ -107,7 +107,8 @@ Show orders/payments rates, open incidents, RCA/runbook confidence.
 
 ### 8. Resilience (optional)
 
-With `AI_PROVIDER=gemini` and a bad key, RCA/runbook still return via **mock fallback**.
+With `AI_PROVIDER=gemini` and a bad key, RCA/runbook still return via **mock fallback**,
+with `"provider": "mock", "degraded": true` in the response.
 
 ---
 

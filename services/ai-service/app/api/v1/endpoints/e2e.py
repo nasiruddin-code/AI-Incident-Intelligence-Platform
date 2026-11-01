@@ -196,7 +196,7 @@ async def run_e2e(
                 E2EStep(
                     name="rca",
                     ok=True,
-                    detail=f"cause={rca.rca.primary_cause[:120]}, confidence={rca.rca.confidence}, provider={rca.provider}",
+                    detail=f"cause={rca.rca.primary_cause[:120]}, confidence={rca.rca.confidence}, provider={rca.provider}, degraded={rca.degraded}",
                 )
             )
         except Exception as exp:

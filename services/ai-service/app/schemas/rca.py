@@ -45,4 +45,8 @@ class RCAResponse(BaseModel):
     """API response wrapper for RCA."""
     incident_id: str
     provider: str
+    degraded: bool = Field(
+        False,
+        description="True if the configured AI provider failed and a fallback answered",
+    )
     rca: RCAResult

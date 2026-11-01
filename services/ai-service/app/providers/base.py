@@ -8,7 +8,8 @@ Anthropic, or a local model, without touching any endpoint or service code —
 only app/providers/factory.py needs to learn about the new provider.
 """
 from abc import ABC, abstractmethod
-from typing import Optional, Type, TypeVar
+from dataclasses import dataclass
+from typing import Optional, Tuple, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -18,6 +19,15 @@ SchemaT = TypeVar("SchemaT", bound=BaseModel)
 class AIProviderError(Exception):
     """Raised when the underlying model/provider call fails or returns
     something that cannot be parsed into the expected shape."""
+
+
+@dataclass(frozen=True)
+class GenerationInfo:
+    """Per-call attribution: which backend actually answered, and whether
+    that answer came from a fallback rather than the configured provider."""
+
+    provider: str
+    degraded: bool = False
 
 
 class AIProvider(ABC):
@@ -50,3 +60,19 @@ class AIProvider(ABC):
         validated object back — not a raw string to regex apart.
         """
         raise NotImplementedError
+
+    async def generate_structured_with_info(
+        self,
+        prompt: str,
+        response_model: Type[SchemaT],
+        system_instruction: Optional[str] = None,
+    ) -> Tuple[SchemaT, GenerationInfo]:
+        """Like `generate_structured`, but also reports who produced the answer.
+
+        Wrappers (e.g. the resilient provider) override this so callers can
+        surface fallback usage per request instead of via shared state.
+        """
+        result = await self.generate_structured(
+            prompt, response_model, system_instruction=system_instruction
+        )
+        return result, GenerationInfo(provider=self.name)

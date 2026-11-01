@@ -5,6 +5,8 @@ from typing import List, Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ProviderName = Literal["mock", "gemini", "anthropic", "openai", "ollama"]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -23,9 +25,33 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
 
-    AI_PROVIDER: Literal["mock", "gemini"] = "mock"
+    AI_PROVIDER: ProviderName = "mock"
+    # Real providers tried in order after AI_PROVIDER fails (mock fallback comes last).
+    AI_FALLBACK_PROVIDERS: List[ProviderName] = Field(default_factory=list)
+    AI_REQUEST_TIMEOUT_SECONDS: float = 120.0
+
     GEMINI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-2.5-flash"
+
+    # Claude (Anthropic). Key may also come from the SDK's own credential chain.
+    ANTHROPIC_API_KEY: str | None = None
+    ANTHROPIC_MODEL: str = "claude-opus-5-5"
+    ANTHROPIC_EFFORT: Literal["low", "medium", "high", "xhigh", "max"] = "high"
+    ANTHROPIC_MAX_TOKENS: int = 16000
+    # Server-side refusal fallback (`fallbacks: "default"`)
+    ANTHROPIC_SERVER_FALLBACKS: bool = True
+
+    OPENAI_API_KEY: str | None = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_BASE_URL: str | None = None
+
+    # Ollama via its OpenAI-compatible endpoint (no API key)
+    OLLAMA_BASE_URL: str = "http://ollama:11434/v1"
+    OLLAMA_MODEL: str = "llama3.1"
+
+    # Investigation agent: "auto" = LLM planner when a real provider is
+    # configured, fixed pipeline with the mock provider.
+    AGENT_MODE: Literal["auto", "planner", "fixed"] = "auto"
 
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
     SERVICE_NAME: str = "ai-service"
@@ -34,6 +60,14 @@ class Settings(BaseSettings):
     LOKI_URL: str = "http://loki:3100"
     TEMPO_URL: str = "http://tempo:3200"
     OBSERVABILITY_TIMEOUT_SECONDS: float = 10.0
+
+    # Live-telemetry enrichment (POST /incidents/{id}/enrich)
+    ENRICH_LOOKBACK_SECONDS: int = 900
+    ENRICH_MAX_LOGS_PER_SERVICE: int = 100
+    ENRICH_MAX_METRICS_PER_SERVICE: int = 50
+    ENRICH_MAX_TRACES_PER_SERVICE: int = 5
+    # Namespace the OTel collector's prometheus exporter adds to metric names
+    ENRICH_METRIC_PREFIX: str = "otel_"
 
     # --- Week 15: resilience + security -----------------------------------
     AI_MAX_RETRIES: int = 2

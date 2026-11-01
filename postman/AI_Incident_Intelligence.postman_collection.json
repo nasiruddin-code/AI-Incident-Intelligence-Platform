@@ -413,8 +413,17 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{ai_base}}/api/v1/incidents",
-            "description": ""
+            "url": "{{ai_base}}/api/v1/incidents?limit=50&offset=0",
+            "description": "Paginated, newest first. Optional filters: status, severity. Response includes count, total, limit, offset."
+          }
+        },
+        {
+          "name": "List Incident Summaries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/summaries?limit=50&offset=0",
+            "description": "Lightweight list (no logs/metrics/traces). Optional filters: status, severity."
           }
         },
         {
@@ -440,6 +449,16 @@
     {
       "name": "5. Correlation / RCA / Runbook",
       "item": [
+        {
+          "name": "Enrich Incident (live telemetry)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"lookback_seconds\": 900\n}" },
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}/enrich",
+            "description": "Pulls logs (Loki), metrics (Prometheus) and traces (Tempo) for the incident's services and time window. Safe to re-run."
+          }
+        },
         {
           "name": "Correlate Incident",
           "request": {
