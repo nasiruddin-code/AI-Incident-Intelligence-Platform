@@ -12,6 +12,7 @@ from app.core.logging import get_logger
 from app.providers.base import AIProvider
 from app.providers.mock_provider import MockAIProvider
 from app.providers.resilient_provider import ResilientAIProvider
+from app.providers.response_cache import ResponseCache
 
 logger = get_logger(__name__)
 
@@ -85,10 +86,17 @@ def build_chain(settings: Settings) -> List[AIProvider]:
 @lru_cache
 def get_ai_provider() -> AIProvider:
     settings = get_settings()
+    cache = (
+        ResponseCache(settings.AI_CACHE_TTL_SECONDS, settings.AI_CACHE_MAX_ENTRIES)
+        if settings.AI_CACHE_TTL_SECONDS > 0
+        else None
+    )
     return ResilientAIProvider(
         build_chain(settings),
         fallback=MockAIProvider(),
         max_retries=settings.AI_MAX_RETRIES,
         retry_backoff_seconds=settings.AI_RETRY_BACKOFF_SECONDS,
         enable_fallback=settings.AI_ENABLE_FALLBACK,
+        cache=cache,
+        prices=settings.AI_MODEL_PRICES,
     )

@@ -4,11 +4,11 @@ Claude implementation of the AIProvider interface, using the official
 which constrains the response to the Pydantic model's JSON schema and
 returns a validated instance.
 """
-from typing import List, Optional, Type
+from typing import List, Optional, Tuple, Type
 
 import anthropic
 
-from app.providers.base import AIProvider, AIProviderError, SchemaT
+from app.providers.base import AIProvider, AIProviderError, GenerationInfo, SchemaT
 
 SERVER_FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
@@ -72,6 +72,17 @@ class AnthropicProvider(AIProvider):
         response_model: Type[SchemaT],
         system_instruction: Optional[str] = None,
     ) -> SchemaT:
+        result, _ = await self.generate_structured_with_info(
+            prompt, response_model, system_instruction=system_instruction
+        )
+        return result
+
+    async def generate_structured_with_info(
+        self,
+        prompt: str,
+        response_model: Type[SchemaT],
+        system_instruction: Optional[str] = None,
+    ) -> Tuple[SchemaT, GenerationInfo]:
         try:
             response = await self._client.beta.messages.parse(
                 **self._request_kwargs(prompt, system_instruction),
@@ -88,4 +99,11 @@ class AnthropicProvider(AIProvider):
         parsed = response.parsed_output
         if parsed is None:
             raise AIProviderError(f"Claude returned no {response_model.__name__} output")
-        return parsed
+        usage = getattr(response, "usage", None)
+        return parsed, GenerationInfo(
+            provider=self.name,
+            # The served model can differ from the requested one after a server-side fallback.
+            model=getattr(response, "model", None) or self._model,
+            input_tokens=getattr(usage, "input_tokens", None) or 0,
+            output_tokens=getattr(usage, "output_tokens", None) or 0,
+        )

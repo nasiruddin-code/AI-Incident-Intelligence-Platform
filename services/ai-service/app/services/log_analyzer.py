@@ -8,6 +8,7 @@ import uuid
 
 from app.prompts.log_analysis import LOG_ANALYSIS_PROMPT
 from app.providers.base import AIProvider
+from app.schemas.common import AIUsage
 from app.schemas.log_analysis import LogAnalysisRequest, LogAnalysisResponse, LogAnalysisResult
 
 
@@ -32,5 +33,6 @@ class LogAnalyzerService:
             request_id=str(uuid.uuid4()),
             provider=info.provider,
             degraded=info.degraded,
+            usage=AIUsage.from_info(info),
             analysis=result,
         )

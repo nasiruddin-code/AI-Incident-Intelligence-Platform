@@ -1,0 +1,117 @@
+{
+  "name": "payment_oom_crash",
+  "description": "payment-service crash-loops on OutOfMemoryError; order-service sees connection refused.",
+  "incident": {
+    "title": "Payments unavailable",
+    "severity": "ERROR",
+    "affected_services": [
+      "order-service",
+      "payment-service"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-10-20T10:00:01Z",
+        "severity": "FATAL",
+        "body": "java.lang.OutOfMemoryError: Java heap space at com.example.payments.BatchReconciler.load",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "timestamp": "2026-10-20T10:00:02Z",
+        "severity": "INFO",
+        "body": "Container restarted (exit code 137), restart count=4",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "timestamp": "2026-10-20T10:00:03Z",
+        "severity": "ERROR",
+        "body": "Payment call failed: connection refused payment-service:8002",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        },
+        "trace_id": "t6",
+        "span_id": "o6"
+      },
+      {
+        "timestamp": "2026-10-20T10:00:20Z",
+        "severity": "FATAL",
+        "body": "java.lang.OutOfMemoryError: Java heap space at com.example.payments.BatchReconciler.load",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      }
+    ],
+    "metrics": [
+      {
+        "name": "process_resident_memory_bytes",
+        "type": "GAUGE",
+        "value": 2100000000.0,
+        "timestamp": "2026-10-20T10:00:30Z",
+        "attributes": {},
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "name": "orders_total",
+        "type": "COUNTER",
+        "value": 18,
+        "timestamp": "2026-10-20T10:00:30Z",
+        "attributes": {
+          "status": "payment_failed"
+        },
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      }
+    ],
+    "traces": [
+      {
+        "trace_id": "t6",
+        "span_id": "o6",
+        "name": "order.create",
+        "start_time": "2026-10-20T10:00:00Z",
+        "end_time": "2026-10-20T10:00:01Z",
+        "status": "ERROR",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "component": "payment-service",
+    "cause_any": [
+      "memory",
+      "oom",
+      "heap"
+    ],
+    "cause_none": [
+      "gateway",
+      "database"
+    ],
+    "min_confidence": 0.5,
+    "runbook_any": [
+      "memory",
+      "heap",
+      "restart"
+    ]
+  }
+}

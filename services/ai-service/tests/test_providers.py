@@ -52,6 +52,19 @@ async def test_anthropic_structured_request_shape():
 
 
 @pytest.mark.asyncio
+async def test_anthropic_reports_usage_and_served_model():
+    provider = _anthropic()
+    provider._client.beta.messages.parse.return_value = SimpleNamespace(
+        stop_reason="end_turn",
+        parsed_output=RESULT,
+        model="claude-opus-4-8",  # e.g. served by the server-side refusal fallback
+        usage=SimpleNamespace(input_tokens=1200, output_tokens=300),
+    )
+    _, info = await provider.generate_structured_with_info("analyze", LogAnalysisResult)
+    assert (info.model, info.input_tokens, info.output_tokens) == ("claude-opus-4-8", 1200, 300)
+
+
+@pytest.mark.asyncio
 async def test_anthropic_without_server_fallbacks():
     provider = _anthropic(server_fallbacks=False)
     parse = provider._client.beta.messages.parse

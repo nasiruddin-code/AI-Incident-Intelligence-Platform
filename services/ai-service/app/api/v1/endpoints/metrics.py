@@ -6,6 +6,7 @@ Postgres is enabled, so a scrape never loads incident evidence.
 from fastapi import APIRouter, Response
 from starlette.concurrency import run_in_threadpool
 
+from app.core.ai_metrics import ai_metrics
 from app.services import incident_store
 
 router = APIRouter()
@@ -45,6 +46,7 @@ async def prometheus_metrics() -> Response:
         "# TYPE ai_runbook_runs_total gauge",
         f"ai_runbook_runs_total {stats.runbook_runs}",
     ]
+    lines += ai_metrics.render()
 
     body = "\n".join(lines) + "\n"
     return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")

@@ -1,0 +1,118 @@
+{
+  "name": "bad_deploy_regression",
+  "description": "payment-service 1.4.0 deployed at 10:00:02; NullPointerException on every payment since.",
+  "incident": {
+    "title": "Payment errors after release",
+    "severity": "ERROR",
+    "affected_services": [
+      "order-service",
+      "payment-service"
+    ],
+    "notes": "Deploy log: payment-service 1.3.2 -> 1.4.0 rolled out at 2026-10-20T10:00:02Z",
+    "logs": [
+      {
+        "timestamp": "2026-10-20T10:00:03Z",
+        "severity": "ERROR",
+        "body": "NullPointerException in PaymentMapper.toGatewayRequest(PaymentMapper.java:57): currency is null",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.4.0",
+          "environment": "production"
+        },
+        "trace_id": "t7",
+        "span_id": "p7"
+      },
+      {
+        "timestamp": "2026-10-20T10:00:04Z",
+        "severity": "ERROR",
+        "body": "Order PAYMENT_FAILED order_id=ord-990 reason=payment-service 500",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        },
+        "trace_id": "t7",
+        "span_id": "o7"
+      },
+      {
+        "timestamp": "2026-10-20T10:00:08Z",
+        "severity": "ERROR",
+        "body": "NullPointerException in PaymentMapper.toGatewayRequest(PaymentMapper.java:57): currency is null",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.4.0",
+          "environment": "production"
+        },
+        "trace_id": "t8",
+        "span_id": "p8"
+      }
+    ],
+    "metrics": [
+      {
+        "name": "payments_total",
+        "type": "COUNTER",
+        "value": 37,
+        "timestamp": "2026-10-20T10:00:30Z",
+        "attributes": {
+          "status": "failed"
+        },
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      }
+    ],
+    "traces": [
+      {
+        "trace_id": "t7",
+        "span_id": "o7",
+        "name": "order.create",
+        "start_time": "2026-10-20T10:00:00Z",
+        "end_time": "2026-10-20T10:00:01Z",
+        "status": "ERROR",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "trace_id": "t7",
+        "span_id": "p7",
+        "name": "payment.process",
+        "start_time": "2026-10-20T10:00:00Z",
+        "end_time": "2026-10-20T10:00:01Z",
+        "status": "ERROR",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.4.0",
+          "environment": "production"
+        },
+        "parent_span_id": "o7"
+      }
+    ]
+  },
+  "expect": {
+    "component": "payment-service",
+    "cause_any": [
+      "deploy",
+      "release",
+      "1.4.0",
+      "regression",
+      "nullpointer",
+      "null"
+    ],
+    "cause_none": [
+      "gateway timeout",
+      "memory",
+      "database"
+    ],
+    "runbook_any": [
+      "rollback",
+      "roll back",
+      "1.3.2",
+      "revert"
+    ]
+  }
+}

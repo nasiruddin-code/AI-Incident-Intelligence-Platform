@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from app.core.logging import get_logger
 from app.prompts.rca import RCA_PROMPT
 from app.providers.base import AIProvider
+from app.schemas.common import AIUsage
 from app.schemas.incident import CorrelationResult, IncidentContext
 from app.schemas.rca import RCAResponse, RCAResult
 from app.schemas.telemetry import SeverityLevel, SpanStatus
@@ -81,6 +82,22 @@ def _fmt_correlation(corr: Optional[CorrelationResult]) -> str:
     return "\n".join(parts)
 
 
+# Keys/lines the RCA and runbook engines write back onto the incident. They are
+# left out of the RCA prompt so a re-run is judged on the evidence alone (not
+# anchored on the previous answer), and identical evidence yields an identical
+# prompt, which the AI response cache can reuse.
+_DERIVED_METADATA_PREFIXES = ("rca_", "runbook_", "remediation_")
+
+
+def _evidence_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in (metadata or {}).items() if not k.startswith(_DERIVED_METADATA_PREFIXES)}
+
+
+def _evidence_notes(notes: Optional[str]) -> str:
+    lines = (notes or "").splitlines()
+    return "\n".join(line for line in lines if not line.startswith("[RCA]")).strip()
+
+
 class RCAEngine:
     def __init__(self, provider: AIProvider):
         self._provider = provider
@@ -118,8 +135,8 @@ class RCAEngine:
             time_window=f"{incident.time_window.start.isoformat()} → {incident.time_window.end.isoformat()}",
             scenario=incident.scenario.value if incident.scenario else "none",
             evidence_summary=incident.evidence_summary or "n/a",
-            notes=incident.notes or "n/a",
-            metadata=json.dumps(incident.metadata) if incident.metadata else "{}",
+            notes=_evidence_notes(incident.notes) or "n/a",
+            metadata=json.dumps(_evidence_metadata(incident.metadata)),
             log_count=str(len(incident.logs)),
             logs_block=_fmt_logs(incident),
             metric_count=str(len(incident.metrics)),
@@ -151,6 +168,7 @@ class RCAEngine:
             "rca_confidence": result.confidence,
             "rca_provider": info.provider,
             "rca_degraded": info.degraded,
+            "rca_prompt": RCA_PROMPT.name,
         }
         if result.summary:
             note_line = f"[RCA] {result.summary}"
@@ -161,5 +179,6 @@ class RCAEngine:
             incident_id=incident_id,
             provider=info.provider,
             degraded=info.degraded,
+            usage=AIUsage.from_info(info),
             rca=result,
         )

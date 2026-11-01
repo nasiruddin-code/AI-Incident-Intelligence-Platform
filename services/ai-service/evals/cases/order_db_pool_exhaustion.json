@@ -1,0 +1,178 @@
+{
+  "name": "order_db_pool_exhaustion",
+  "description": "order-service exhausts its DB connection pool; payment-service is healthy. Distractor: the words 'timed out' appear.",
+  "incident": {
+    "title": "Order API returning 500s",
+    "severity": "ERROR",
+    "affected_services": [
+      "order-service",
+      "payment-service"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-10-20T10:00:01Z",
+        "severity": "ERROR",
+        "body": "HikariPool-1 - Connection is not available, request timed out after 30000ms (total=20, active=20, idle=0, waiting=57)",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        },
+        "trace_id": "t4",
+        "span_id": "o4"
+      },
+      {
+        "timestamp": "2026-10-20T10:00:02Z",
+        "severity": "ERROR",
+        "body": "Failed to persist order: could not obtain JDBC connection from pool",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        },
+        "trace_id": "t4",
+        "span_id": "o4"
+      },
+      {
+        "timestamp": "2026-10-20T10:00:03Z",
+        "severity": "WARN",
+        "body": "Slow query detected: SELECT * FROM orders WHERE customer_id=? took 12840ms",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "timestamp": "2026-10-20T10:00:05Z",
+        "severity": "INFO",
+        "body": "Payment COMPLETED order_id=ord-777 amount=19.99",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      }
+    ],
+    "metrics": [
+      {
+        "name": "db_pool_active_connections",
+        "type": "GAUGE",
+        "value": 20,
+        "timestamp": "2026-10-20T10:00:30Z",
+        "attributes": {
+          "pool": "HikariPool-1"
+        },
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "name": "db_pool_pending_requests",
+        "type": "GAUGE",
+        "value": 57,
+        "timestamp": "2026-10-20T10:00:30Z",
+        "attributes": {
+          "pool": "HikariPool-1"
+        },
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "name": "orders_total",
+        "type": "COUNTER",
+        "value": 63,
+        "timestamp": "2026-10-20T10:00:30Z",
+        "attributes": {
+          "status": "failed"
+        },
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "name": "payments_total",
+        "type": "COUNTER",
+        "value": 0,
+        "timestamp": "2026-10-20T10:00:30Z",
+        "attributes": {
+          "status": "failed"
+        },
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      }
+    ],
+    "traces": [
+      {
+        "trace_id": "t4",
+        "span_id": "o4",
+        "name": "order.create",
+        "start_time": "2026-10-20T10:00:00Z",
+        "end_time": "2026-10-20T10:00:30Z",
+        "status": "ERROR",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "trace_id": "t5",
+        "span_id": "o5",
+        "name": "order.create",
+        "start_time": "2026-10-20T10:00:00Z",
+        "end_time": "2026-10-20T10:00:02Z",
+        "status": "OK",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "trace_id": "t5",
+        "span_id": "p5",
+        "name": "payment.process",
+        "start_time": "2026-10-20T10:00:00Z",
+        "end_time": "2026-10-20T10:00:01Z",
+        "status": "OK",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        },
+        "parent_span_id": "o5"
+      }
+    ]
+  },
+  "expect": {
+    "component": "order-service",
+    "cause_any": [
+      "connection pool",
+      "pool",
+      "database",
+      "jdbc",
+      "db"
+    ],
+    "cause_none": [
+      "gateway",
+      "payment-service"
+    ],
+    "min_confidence": 0.5,
+    "runbook_any": [
+      "pool",
+      "database",
+      "connection"
+    ]
+  }
+}

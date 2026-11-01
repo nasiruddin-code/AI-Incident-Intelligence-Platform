@@ -23,11 +23,16 @@ class AIProviderError(Exception):
 
 @dataclass(frozen=True)
 class GenerationInfo:
-    """Per-call attribution: which backend actually answered, and whether
-    that answer came from a fallback rather than the configured provider."""
+    """Per-call attribution: which backend actually answered, whether that
+    answer came from a fallback, and what it cost (when the backend reports it)."""
 
     provider: str
     degraded: bool = False
+    model: Optional[str] = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    latency_ms: float = 0.0
+    cached: bool = False
 
 
 class AIProvider(ABC):

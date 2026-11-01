@@ -42,3 +42,24 @@ groups:
         annotations:
           summary: "Elevated payment latency (p95 > 1s)"
           description: "Payment processing p95 latency is above 1 second."
+
+      - alert: AIProviderFallbackActive
+        expr: sum(increase(ai_llm_fallbacks_total[10m])) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI answers are coming from the mock fallback"
+          description: "Every configured AI provider failed for at least one request in the last 10 minutes; RCA/runbook output is placeholder text (degraded=true)."
+
+      - alert: AIProviderErrorRateHigh
+        expr: |
+          sum by (provider) (rate(ai_llm_requests_total{outcome="error"}[10m]))
+          /
+          clamp_min(sum by (provider) (rate(ai_llm_requests_total[10m])), 0.001) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI provider {{ $labels.provider }} error rate above 20%"
+          description: "More than 20% of calls to {{ $labels.provider }} are failing (check keys, quotas, or provider status)."

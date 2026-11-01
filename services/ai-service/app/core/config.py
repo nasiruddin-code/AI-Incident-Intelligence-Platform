@@ -1,6 +1,6 @@
 """Centralised application configuration."""
 from functools import lru_cache
-from typing import List, Literal
+from typing import Dict, List, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,6 +29,20 @@ class Settings(BaseSettings):
     # Real providers tried in order after AI_PROVIDER fails (mock fallback comes last).
     AI_FALLBACK_PROVIDERS: List[ProviderName] = Field(default_factory=list)
     AI_REQUEST_TIMEOUT_SECONDS: float = 120.0
+
+    # Structured-response cache for real model answers (0 disables)
+    AI_CACHE_TTL_SECONDS: float = 3600.0
+    AI_CACHE_MAX_ENTRIES: int = 500
+    # model -> [USD per 1M input tokens, USD per 1M output tokens], for the
+    # ai_llm_cost_usd_total estimate. Add entries for other models you use.
+    AI_MODEL_PRICES: Dict[str, List[float]] = Field(
+        default_factory=lambda: {
+            "claude-opus-5-5": [4.0, 20.0],
+            "claude-sonnet-5-5": [2.0, 10.0],
+            "claude-haiku-5-5": [0.10, 0.50],
+            "claude-fable-5-1": [10.0, 50.0],
+        }
+    )
 
     GEMINI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-2.5-flash"

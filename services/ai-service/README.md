@@ -48,6 +48,46 @@ Each provider is retried `AI_MAX_RETRIES` times; then the next one in the chain 
 tried; then the mock fallback. Responses report who answered (`provider`) and
 `degraded: true` when it was the mock fallback.
 
+## AI cost control
+
+- **Usage on every response** — RCA, runbook and log-analysis responses include
+  `usage` (`model`, `input_tokens`, `output_tokens`, `latency_ms`, `cached`).
+- **Response cache** — identical structured requests to a real model are served
+  from an in-process cache for `AI_CACHE_TTL_SECONDS` (default 1h, `0` disables).
+  Fallback/mock answers are never cached. The RCA prompt leaves out the engine's
+  own previous answer (`rca_*` metadata, `[RCA]` notes), so re-running RCA on
+  unchanged evidence is a cache hit instead of a new, anchored answer.
+- **Metrics** on `/metrics`: `ai_llm_requests_total{provider,operation,outcome}`,
+  `ai_llm_tokens_total{provider,model,direction}`, `ai_llm_cost_usd_total`
+  (estimated from `AI_MODEL_PRICES`), `ai_llm_latency_seconds`,
+  `ai_llm_cache_hits_total`, `ai_llm_fallbacks_total`. Shown in Grafana
+  (*AI cost & reliability* row) with alerts `AIProviderFallbackActive` and
+  `AIProviderErrorRateHigh`.
+
+## Evaluating prompts and models
+
+`evals/` holds golden incidents with known root causes (gateway timeout,
+latency, DB pool exhaustion, OOM crash-loop, bad deploy, and a thin-evidence
+case that checks the model is *not* overconfident). Each runs through
+correlation → RCA → runbook with the real prompts and is scored on: blamed
+component, root-cause keywords, distractors avoided, confidence bounds, and
+runbook content.
+
+```bash
+python -m evals.run_evals                       # provider from .env
+python -m evals.run_evals --case payment_oom_crash --repeat 3   # variance
+python -m evals.run_evals --json report.json --min-pass-rate 0.8
+```
+
+With a real provider this makes billed calls (about 2 per case per repeat;
+the report prints tokens and estimated cost). Exit code is 1 below
+`--min-pass-rate` and 2 if any answer came from the mock fallback. Prompt
+versions (`rca_v1`, `runbook_v1`) are in the report and saved on each
+incident (`rca_prompt`, `runbook_prompt`) — bump the template `name` when
+changing a prompt and compare reports. CI (`tests/test_evals.py`) checks the
+case files and harness with the mock provider; the keyword-matching mock
+scores 3/6, which is the floor a real model should clear.
+
 ## Investigation agent
 
 `POST /api/v1/agent/investigate` runs in one of two modes (`AGENT_MODE`, or

@@ -284,6 +284,135 @@
         "enableLogDetails": true,
         "sortOrder": "Descending"
       }
+    },
+    {
+      "title": "AI cost & reliability",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "id": 40,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "AI spend (24h, estimated)",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 0,
+        "y": 39
+      },
+      "id": 41,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(ai_llm_cost_usd_total[24h]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "graphMode": "area"
+      }
+    },
+    {
+      "title": "Tokens / min by provider",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 7,
+        "x": 4,
+        "y": 39
+      },
+      "id": 42,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider, direction) (rate(ai_llm_tokens_total[5m])) * 60",
+          "legendFormat": "{{provider}} {{direction}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "AI calls / min by outcome",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 7,
+        "x": 11,
+        "y": 39
+      },
+      "id": 43,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider, outcome) (rate(ai_llm_requests_total[5m])) * 60",
+          "legendFormat": "{{provider}} {{outcome}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(ai_llm_fallbacks_total[5m])) * 60",
+          "legendFormat": "mock fallback",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(ai_llm_cache_hits_total[5m])) * 60",
+          "legendFormat": "cache hits",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "title": "AI call latency (avg)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 39
+      },
+      "id": 44,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (provider) (rate(ai_llm_latency_seconds_sum[5m])) / clamp_min(sum by (provider) (rate(ai_llm_latency_seconds_count[5m])), 0.001)",
+          "legendFormat": "{{provider}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
     }
   ],
   "refresh": "30s",

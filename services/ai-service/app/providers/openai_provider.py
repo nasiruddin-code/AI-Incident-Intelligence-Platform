@@ -6,11 +6,11 @@ Serves both OpenAI and Ollama (which exposes an OpenAI-compatible
 Structured output requests a JSON-schema response and validates it with
 Pydantic, so the platform's existing schemas work without strict-mode changes.
 """
-from typing import Optional, Type
+from typing import Any, Optional, Tuple, Type
 
 import openai
 
-from app.providers.base import AIProvider, AIProviderError, SchemaT
+from app.providers.base import AIProvider, AIProviderError, GenerationInfo, SchemaT
 
 
 class OpenAICompatibleProvider(AIProvider):
@@ -38,7 +38,7 @@ class OpenAICompatibleProvider(AIProvider):
         messages.append({"role": "user", "content": prompt})
         return messages
 
-    async def _complete(self, messages: list, **kwargs) -> str:
+    async def _complete(self, messages: list, **kwargs) -> Tuple[str, Any]:
         try:
             response = await self._client.chat.completions.create(
                 model=self._model, messages=messages, **kwargs
@@ -48,10 +48,11 @@ class OpenAICompatibleProvider(AIProvider):
         choice = response.choices[0]
         if choice.finish_reason == "length":
             raise AIProviderError(f"{self.name} response was truncated (length limit)")
-        return choice.message.content or ""
+        return choice.message.content or "", getattr(response, "usage", None)
 
     async def generate_text(self, prompt: str, system_instruction: Optional[str] = None) -> str:
-        return await self._complete(self._messages(prompt, system_instruction))
+        text, _ = await self._complete(self._messages(prompt, system_instruction))
+        return text
 
     async def generate_structured(
         self,
@@ -59,7 +60,18 @@ class OpenAICompatibleProvider(AIProvider):
         response_model: Type[SchemaT],
         system_instruction: Optional[str] = None,
     ) -> SchemaT:
-        text = await self._complete(
+        result, _ = await self.generate_structured_with_info(
+            prompt, response_model, system_instruction=system_instruction
+        )
+        return result
+
+    async def generate_structured_with_info(
+        self,
+        prompt: str,
+        response_model: Type[SchemaT],
+        system_instruction: Optional[str] = None,
+    ) -> Tuple[SchemaT, GenerationInfo]:
+        text, usage = await self._complete(
             self._messages(prompt, system_instruction),
             response_format={
                 "type": "json_schema",
@@ -73,8 +85,14 @@ class OpenAICompatibleProvider(AIProvider):
         if not text:
             raise AIProviderError(f"{self.name} returned an empty response")
         try:
-            return response_model.model_validate_json(text)
+            result = response_model.model_validate_json(text)
         except Exception as exc:
             raise AIProviderError(
                 f"{self.name} response did not match {response_model.__name__}: {exc}"
             ) from exc
+        return result, GenerationInfo(
+            provider=self.name,
+            model=self._model,
+            input_tokens=getattr(usage, "prompt_tokens", None) or 0,
+            output_tokens=getattr(usage, "completion_tokens", None) or 0,
+        )

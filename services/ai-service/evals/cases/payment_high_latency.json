@@ -1,0 +1,135 @@
+{
+  "name": "payment_high_latency",
+  "description": "Payments succeed but slowly (p95 2.4s); no errors.",
+  "incident": {
+    "title": "Checkout is slow",
+    "severity": "WARN",
+    "affected_services": [
+      "order-service",
+      "payment-service"
+    ],
+    "logs": [
+      {
+        "timestamp": "2026-10-20T10:00:01Z",
+        "severity": "WARN",
+        "body": "Slow payment processing: 2410ms (threshold 1000ms)",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "timestamp": "2026-10-20T10:00:09Z",
+        "severity": "WARN",
+        "body": "Slow payment processing: 2380ms (threshold 1000ms)",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "timestamp": "2026-10-20T10:00:12Z",
+        "severity": "INFO",
+        "body": "Order PAID order_id=ord-901 duration=2650ms",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      }
+    ],
+    "metrics": [
+      {
+        "name": "payment_duration_seconds",
+        "type": "HISTOGRAM",
+        "value": 2.4,
+        "timestamp": "2026-10-20T10:00:30Z",
+        "attributes": {
+          "status": "completed"
+        },
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "name": "payments_total",
+        "type": "COUNTER",
+        "value": 120,
+        "timestamp": "2026-10-20T10:00:30Z",
+        "attributes": {
+          "status": "completed"
+        },
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "name": "payments_total",
+        "type": "COUNTER",
+        "value": 0,
+        "timestamp": "2026-10-20T10:00:30Z",
+        "attributes": {
+          "status": "failed"
+        },
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      }
+    ],
+    "traces": [
+      {
+        "trace_id": "t3",
+        "span_id": "o3",
+        "name": "order.create",
+        "start_time": "2026-10-20T10:00:00Z",
+        "end_time": "2026-10-20T10:00:03Z",
+        "status": "OK",
+        "resource": {
+          "service_name": "order-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        }
+      },
+      {
+        "trace_id": "t3",
+        "span_id": "p3",
+        "name": "payment.process",
+        "start_time": "2026-10-20T10:00:00Z",
+        "end_time": "2026-10-20T10:00:03Z",
+        "status": "OK",
+        "resource": {
+          "service_name": "payment-service",
+          "service_version": "1.3.2",
+          "environment": "production"
+        },
+        "parent_span_id": "o3"
+      }
+    ]
+  },
+  "expect": {
+    "component": "payment-service",
+    "cause_any": [
+      "latency",
+      "slow",
+      "duration"
+    ],
+    "cause_none": [
+      "outage",
+      "memory",
+      "database"
+    ],
+    "runbook_any": [
+      "latency",
+      "slow",
+      "payment"
+    ]
+  }
+}

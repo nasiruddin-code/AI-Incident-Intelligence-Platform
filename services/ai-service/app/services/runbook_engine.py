@@ -7,6 +7,7 @@ from typing import List, Optional
 from app.core.logging import get_logger
 from app.prompts.runbook import RUNBOOK_PROMPT
 from app.providers.base import AIProvider
+from app.schemas.common import AIUsage
 from app.schemas.incident import IncidentContext
 from app.schemas.runbook import RunbookResponse, RunbookResult
 from app.services import incident_store
@@ -77,6 +78,7 @@ class RunbookEngine:
             "runbook_confidence": result.confidence,
             "runbook_provider": info.provider,
             "runbook_degraded": info.degraded,
+            "runbook_prompt": RUNBOOK_PROMPT.name,
             "remediation_count": len(result.remediation_actions),
         }
         incident_store.save(incident)
@@ -85,6 +87,7 @@ class RunbookEngine:
             incident_id=incident_id,
             provider=info.provider,
             degraded=info.degraded,
+            usage=AIUsage.from_info(info),
             runbook=result,
             rca_primary_cause=(incident.metadata or {}).get("rca_primary_cause"),
         )
