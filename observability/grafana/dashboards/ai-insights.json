@@ -63,7 +63,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum by (status) (rate(orders_total[5m]))",
+          "expr": "sum by (status) (rate(otel_orders_total[5m]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -83,7 +83,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum by (status) (rate(payments_total[5m]))",
+          "expr": "sum by (status) (rate(otel_payments_total[5m]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -230,7 +230,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum by (status) (rate(payment_duration_seconds_sum[5m])) / clamp_min(sum by (status) (rate(payment_duration_seconds_count[5m])), 0.001)",
+          "expr": "sum by (status) (rate(otel_payment_duration_seconds_sum[5m])) / clamp_min(sum by (status) (rate(otel_payment_duration_seconds_count[5m])), 0.001)",
           "legendFormat": "avg {{status}}",
           "refId": "A"
         }
@@ -247,7 +247,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum by (status) (rate(order_duration_seconds_sum[5m])) / clamp_min(sum by (status) (rate(order_duration_seconds_count[5m])), 0.001)",
+          "expr": "sum by (status) (rate(otel_order_duration_seconds_sum[5m])) / clamp_min(sum by (status) (rate(otel_order_duration_seconds_count[5m])), 0.001)",
           "legendFormat": "avg {{status}}",
           "refId": "A"
         }

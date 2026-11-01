@@ -6,6 +6,10 @@ os.environ["AI_PROVIDER"] = "mock"
 os.environ["ENVIRONMENT"] = "test"
 # The suite makes hundreds of requests per minute; rate-limit tests opt back in.
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+# Environment variables beat .env, so a developer's .env (Docker hostnames for
+# Postgres and the collector) can't make tests reach for real backends.
+os.environ["DATABASE_URL"] = ""
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = ""
 
 import pytest
 from fastapi.testclient import TestClient

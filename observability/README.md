@@ -111,7 +111,7 @@ Once order-service / payment-service / ai-service are running with
 | Signal  | Backend   | How to view |
 |---------|-----------|-------------|
 | Traces  | Tempo     | Grafana → Explore → Tempo → search `order-service` |
-| Metrics | Prometheus| Grafana → Explore → Prometheus → `orders_total`, `payments_total` |
+| Metrics | Prometheus| Grafana → Explore → Prometheus → `otel_orders_total`, `otel_payments_total` (the collector adds the `otel_` namespace) |
 | Logs    | Loki      | (structured logs with trace_id when LoggingInstrumentor is active) |
 
 Generate traffic:

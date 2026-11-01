@@ -587,11 +587,11 @@
           }
         },
         {
-          "name": "Query Prometheus (orders_total)",
+          "name": "Query Prometheus (otel_orders_total)",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{ai_base}}/api/v1/observability/metrics?query=orders_total",
+            "url": "{{ai_base}}/api/v1/observability/metrics?query=otel_orders_total",
             "description": ""
           }
         },

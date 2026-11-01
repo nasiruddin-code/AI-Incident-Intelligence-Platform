@@ -32,6 +32,12 @@ def _metrics():
             name="payment_duration_seconds",
             description="Payment processing duration",
             unit="s",
+            # Seconds-scale buckets: the SDK defaults (0, 5, 10, ... 10000) assume
+            # milliseconds, which put every request in the first bucket and made
+            # histogram_quantile report ~4.75s for millisecond latencies.
+            explicit_bucket_boundaries_advisory=[
+                0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0
+            ],
         )
     return _payments_total, _payment_duration
 
