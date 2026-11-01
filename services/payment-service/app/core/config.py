@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # Failure injection (Week 8 incident scenarios)
     FAILURE_RATE: float = 0.0
     LATENCY_MS: int = 0
+    # Runtime control via /api/v1/fault-injection. None = enabled except in production.
+    FAULT_INJECTION_API_ENABLED: bool | None = None
+    # If set, callers must send X-Fault-Token with this value.
+    FAULT_INJECTION_TOKEN: str | None = None
 
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = None
 

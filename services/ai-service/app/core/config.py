@@ -75,6 +75,15 @@ class Settings(BaseSettings):
     TEMPO_URL: str = "http://tempo:3200"
     OBSERVABILITY_TIMEOUT_SECONDS: float = 10.0
 
+    # Alertmanager webhook (POST /alerts/alertmanager): what to run for new alerts
+    ALERT_AUTO_INVESTIGATE: bool = True
+    ALERT_AUTO_ENRICH: bool = True
+    ALERT_AUTO_RCA: bool = True
+    ALERT_AUTO_RUNBOOK: bool = True
+
+    # Sent as X-Fault-Token when scenarios reconfigure payment-service
+    PAYMENT_FAULT_INJECTION_TOKEN: str | None = None
+
     # Live-telemetry enrichment (POST /incidents/{id}/enrich)
     ENRICH_LOOKBACK_SECONDS: int = 900
     ENRICH_MAX_LOGS_PER_SERVICE: int = 100

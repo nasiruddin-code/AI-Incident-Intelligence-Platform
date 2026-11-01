@@ -9,6 +9,7 @@ from typing import Dict, Optional
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.core.telemetry import get_meter, get_tracer
+from app.services import fault_injection
 from app.schemas.payment import PaymentCreate, PaymentResponse, PaymentStatus
 
 logger = get_logger(__name__)
@@ -54,10 +55,11 @@ class PaymentProcessor:
             payment_id = str(uuid.uuid4())
             now = datetime.now(timezone.utc)
 
-            if self.settings.LATENCY_MS > 0:
-                await asyncio.sleep(self.settings.LATENCY_MS / 1000.0)
+            faults = fault_injection.get_config(self.settings)
+            if faults.latency_ms > 0:
+                await asyncio.sleep(faults.latency_ms / 1000.0)
 
-            if random.random() < self.settings.FAILURE_RATE:
+            if random.random() < faults.failure_rate:
                 status = PaymentStatus.FAILED
                 failure_reason = "Simulated payment gateway timeout"
                 logger.warning(

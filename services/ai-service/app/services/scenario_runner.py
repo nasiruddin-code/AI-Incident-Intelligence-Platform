@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.schemas.incident import (
     IncidentContext,
@@ -69,6 +70,26 @@ def _order_payload(idx: int) -> dict:
         "currency": "USD",
         "payment_method": "card",
     }
+
+
+async def _fault_injection(
+    payment_service_url: str, method: str, payload: Optional[dict] = None
+) -> Optional[dict]:
+    """Call payment-service's /fault-injection API. Returns the config, or None on any failure."""
+    url = f"{payment_service_url.rstrip('/')}/api/v1/fault-injection"
+    token = get_settings().PAYMENT_FAULT_INJECTION_TOKEN
+    headers = {"X-Fault-Token": token} if token else {}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.request(method, url, json=payload, headers=headers)
+        if resp.status_code != 200:
+            logger.warning("Fault injection %s %s returned %s", method, url, resp.status_code)
+            return None
+        data = resp.json()
+        return data if isinstance(data, dict) else None
+    except httpx.HTTPError as exc:
+        logger.warning("Fault injection %s %s failed: %s", method, url, exc)
+        return None
 
 
 async def _fire_orders(
@@ -269,17 +290,35 @@ async def run_scenario(req: ScenarioRunRequest) -> ScenarioRunResult:
         req.order_service_url,
     )
 
-    # Note: FAILURE_RATE / LATENCY_MS must already be set on payment-service
-    # via env for the desired effect. The scenario documents the expected config.
-    successes, failures = await _fire_orders(req.order_service_url, req.order_count)
+    target = {"failure_rate": cfg["failure_rate"], "latency_ms": cfg["latency_ms"]}
+    previous: Optional[dict] = None
+    applied = restored = False
+    if req.apply_failure_config:
+        previous = await _fault_injection(req.payment_service_url, "GET")
+        applied = await _fault_injection(req.payment_service_url, "PUT", target) is not None
+    try:
+        successes, failures = await _fire_orders(req.order_service_url, req.order_count)
+    finally:
+        if applied and req.restore_failure_config and previous is not None:
+            restored = await _fault_injection(req.payment_service_url, "PUT", previous) is not None
 
     logs, metrics, traces = _synthetic_telemetry(req.scenario, successes, failures, cfg)
 
+    config_note = (
+        f"Applied FAILURE_RATE={cfg['failure_rate']}, LATENCY_MS={cfg['latency_ms']} to payment-service"
+        + (" and restored the previous settings afterwards." if restored else ".")
+        if applied
+        else (
+            "Did not change payment-service settings "
+            + ("(apply_failure_config=false)" if not req.apply_failure_config
+               else "(fault-injection API unavailable)")
+            + f"; expected FAILURE_RATE={cfg['failure_rate']}, LATENCY_MS={cfg['latency_ms']}."
+        )
+    )
     notes = (
         f"Scenario '{req.scenario.value}' executed: "
         f"{len(successes)} paid, {len(failures)} failed out of {req.order_count}. "
-        f"Expected config: FAILURE_RATE={cfg['failure_rate']}, LATENCY_MS={cfg['latency_ms']}. "
-        f"{cfg['description']}"
+        f"{config_note} {cfg['description']}"
     )
 
     incident: IncidentContext = build_from_scenario_results(
@@ -296,6 +335,8 @@ async def run_scenario(req: ScenarioRunRequest) -> ScenarioRunResult:
             "orders_failed": len(failures),
             "expected_failure_rate": cfg["failure_rate"],
             "expected_latency_ms": cfg["latency_ms"],
+            "failure_config_applied": applied,
+            "failure_config_restored": restored,
         },
     )
 

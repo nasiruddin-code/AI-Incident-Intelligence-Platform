@@ -60,7 +60,7 @@ curl -s "http://localhost:8000/api/v1/observability/traces?service=order-service
 ### 3. Inject failure (optional)
 
 ```bash
-# Set FAILURE_RATE=1.0 in payment-service and restart, OR use scenario API
+# The scenario sets payment-service FAILURE_RATE=1.0 at runtime and restores it afterwards
 curl -s -X POST http://localhost:8000/api/v1/incidents/scenarios/run \
   -H "Content-Type: application/json" \
   -d '{"scenario":"payment_timeout","order_count":5}' | jq .

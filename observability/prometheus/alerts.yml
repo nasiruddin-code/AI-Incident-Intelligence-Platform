@@ -17,6 +17,7 @@ groups:
           clamp_min(sum(rate(payments_total[5m])), 0.001) > 0.3
         for: 2m
         labels:
+          service: payment-service
           severity: warning
         annotations:
           summary: "High payment failure rate"
@@ -29,6 +30,7 @@ groups:
           clamp_min(sum(rate(orders_total[5m])), 0.001) > 0.3
         for: 2m
         labels:
+          service: order-service
           severity: warning
         annotations:
           summary: "High order payment-failure rate"
@@ -38,6 +40,7 @@ groups:
         expr: histogram_quantile(0.95, sum(rate(payment_duration_seconds_bucket[5m])) by (le)) > 1
         for: 3m
         labels:
+          service: payment-service
           severity: warning
         annotations:
           summary: "Elevated payment latency (p95 > 1s)"
@@ -47,6 +50,9 @@ groups:
         expr: sum(increase(ai_llm_fallbacks_total[10m])) > 0
         for: 0m
         labels:
+          service: ai-service
+          # Don't spend AI calls investigating an AI outage
+          ai_investigate: "false"
           severity: warning
         annotations:
           summary: "AI answers are coming from the mock fallback"
@@ -59,6 +65,9 @@ groups:
           clamp_min(sum by (provider) (rate(ai_llm_requests_total[10m])), 0.001) > 0.2
         for: 5m
         labels:
+          service: ai-service
+          # Don't spend AI calls investigating an AI outage
+          ai_investigate: "false"
           severity: warning
         annotations:
           summary: "AI provider {{ $labels.provider }} error rate above 20%"

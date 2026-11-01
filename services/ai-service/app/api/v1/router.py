@@ -3,7 +3,7 @@ Aggregates all v1 endpoint routers into a single `api_router`.
 """
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import agent, e2e, health, incidents, log_analysis, observability, telemetry
+from app.api.v1.endpoints import agent, alerts, e2e, health, incidents, log_analysis, observability, telemetry
 
 api_router = APIRouter()
 
@@ -14,3 +14,4 @@ api_router.include_router(incidents.router, prefix="/incidents", tags=["Incident
 api_router.include_router(agent.router, prefix="/agent", tags=["AI Agent"])
 api_router.include_router(observability.router, prefix="/observability", tags=["Observability"])
 api_router.include_router(e2e.router, prefix="/e2e", tags=["E2E"])
+api_router.include_router(alerts.router, prefix="/alerts", tags=["Alerts"])

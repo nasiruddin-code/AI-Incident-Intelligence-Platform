@@ -221,6 +221,42 @@
             "url": "{{payment_base}}/api/v1/payments/by-order/{{order_id}}",
             "description": ""
           }
+        },
+        {
+          "name": "Payment Fault Injection \u2014 Get",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment_base}}/api/v1/fault-injection",
+            "description": "Current runtime failure settings."
+          }
+        },
+        {
+          "name": "Payment Fault Injection \u2014 Set",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment_base}}/api/v1/fault-injection",
+            "description": "Change failure injection without restarting payment-service.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"failure_rate\": 1.0,\n  \"latency_ms\": 0\n}"
+            }
+          }
+        },
+        {
+          "name": "Payment Fault Injection \u2014 Reset",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{payment_base}}/api/v1/fault-injection",
+            "description": "Back to FAILURE_RATE / LATENCY_MS from env."
+          }
         }
       ]
     },
@@ -632,6 +668,24 @@
               }
             }
           ]
+        },
+        {
+          "name": "Alertmanager Webhook (sample firing alert)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/alerts/alertmanager",
+            "description": "What Alertmanager sends. Opens an incident and investigates it in the background; send again with status=resolved to resolve it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"4\",\n  \"groupKey\": \"{}:{alertname=\\\"HighPaymentFailureRate\\\", service=\\\"payment-service\\\"}\",\n  \"status\": \"firing\",\n  \"receiver\": \"ai-service\",\n  \"groupLabels\": {\n    \"alertname\": \"HighPaymentFailureRate\",\n    \"service\": \"payment-service\"\n  },\n  \"commonLabels\": {\n    \"alertname\": \"HighPaymentFailureRate\",\n    \"service\": \"payment-service\",\n    \"severity\": \"warning\"\n  },\n  \"commonAnnotations\": {\n    \"summary\": \"High payment failure rate\"\n  },\n  \"externalURL\": \"http://alertmanager:9093\",\n  \"alerts\": [\n    {\n      \"status\": \"firing\",\n      \"labels\": {\n        \"alertname\": \"HighPaymentFailureRate\",\n        \"service\": \"payment-service\",\n        \"severity\": \"warning\"\n      },\n      \"annotations\": {\n        \"summary\": \"High payment failure rate\",\n        \"description\": \"More than 30% of payments are failing over the last 5 minutes.\"\n      },\n      \"startsAt\": \"2026-10-20T10:00:00Z\",\n      \"fingerprint\": \"postman-demo-1\"\n    }\n  ]\n}"
+            }
+          }
         }
       ]
     }

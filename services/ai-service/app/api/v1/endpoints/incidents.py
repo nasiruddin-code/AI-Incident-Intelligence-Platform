@@ -130,7 +130,9 @@ async def run_failure_scenario(payload: ScenarioRunRequest) -> ScenarioRunResult
     """Fire orders against order-service under a known failure pattern and
     return a fully populated IncidentContext with synthetic telemetry evidence.
 
-    For realistic failures, set payment-service env before starting:
+    The scenario's failure settings are applied to payment-service through its
+    /fault-injection API before the orders are sent and restored afterwards
+    (apply_failure_config / restore_failure_config):
     - payment_timeout:        FAILURE_RATE=1.0
     - payment_high_latency:   LATENCY_MS=2000
     - payment_cascade_failure: FAILURE_RATE=0.6 LATENCY_MS=800

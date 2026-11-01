@@ -92,6 +92,7 @@ curl -X POST http://localhost:8001/api/v1/orders \
 | Payment Service  | http://localhost:8002/docs |
 | Grafana          | http://localhost:3000 (admin/admin) |
 | Prometheus       | http://localhost:9090 |
+| Alertmanager     | http://localhost:9093 (routes alerts to ai-service → incidents) |
 | Loki             | http://localhost:3100 |
 | Tempo            | http://localhost:3200 |
 

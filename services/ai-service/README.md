@@ -48,6 +48,28 @@ Each provider is retried `AI_MAX_RETRIES` times; then the next one in the chain 
 tried; then the mock fallback. Responses report who answered (`provider`) and
 `degraded: true` when it was the mock fallback.
 
+## Alerts → incidents (Alertmanager)
+
+Prometheus alerts go to Alertmanager (`observability/alertmanager.yml`), which
+posts to `POST /api/v1/alerts/alertmanager`. One alert group = one incident:
+
+- **firing** — opens an incident (title from the alert summary, severity from
+  the `severity` label, services from `service`/`service_name`/`job`, alerts as
+  log evidence), then in the background pulls live telemetry, correlates, runs
+  RCA and a runbook (`ALERT_AUTO_ENRICH` / `ALERT_AUTO_RCA` / `ALERT_AUTO_RUNBOOK`,
+  master switch `ALERT_AUTO_INVESTIGATE`). Results land on the incident;
+  `metadata.auto_investigation` records each step.
+- **repeat notifications** update the same open incident; investigation re-runs
+  only when new alerts join the group.
+- **resolved** — marks the incident `RESOLVED`; a later firing opens a new one.
+
+Alerts labelled `ai_investigate: "false"` (the AI service's own health alerts)
+open incidents without spending AI calls. With `ENABLE_AUTH=true`, configure the
+Alertmanager receiver's `http_config.authorization` (Bearer) with `API_KEY` —
+the API accepts `Authorization: Bearer <API_KEY>` as well as `X-API-Key`.
+
+Each new alert group costs up to two AI calls (RCA + runbook).
+
 ## AI cost control
 
 - **Usage on every response** — RCA, runbook and log-analysis responses include
@@ -169,7 +191,8 @@ curl -X POST http://localhost:8000/api/v1/incidents/context \
     }]
   }'
 
-# Run a failure scenario (set FAILURE_RATE=1.0 on payment-service first)
+# Run a failure scenario (applies FAILURE_RATE/LATENCY_MS to payment-service at
+# runtime, then restores them; see apply_failure_config / restore_failure_config)
 curl -X POST http://localhost:8000/api/v1/incidents/scenarios/run \
   -H "Content-Type: application/json" \
   -d '{"scenario":"payment_timeout","order_count":5}'

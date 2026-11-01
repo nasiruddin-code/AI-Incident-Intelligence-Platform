@@ -18,11 +18,23 @@ Week 6–7 sample microservice. Processes payments with OpenTelemetry instrument
 
 ## Failure injection (Week 8+ incident scenarios)
 
-In `.env`:
+Startup defaults in `.env`:
 ```
 FAILURE_RATE=0.3    # 30% of payments fail
 LATENCY_MS=500      # add 500ms artificial delay
 ```
+
+Change them at runtime, no restart (ai-service scenarios do this automatically):
+```bash
+curl http://localhost:8002/api/v1/fault-injection                 # current
+curl -X PUT http://localhost:8002/api/v1/fault-injection   -H "Content-Type: application/json" -d '{"failure_rate":1.0,"latency_ms":0}'
+curl -X DELETE http://localhost:8002/api/v1/fault-injection       # back to .env values
+```
+
+The API returns 404 when `ENVIRONMENT=production` unless
+`FAULT_INJECTION_API_ENABLED=true`. Set `FAULT_INJECTION_TOKEN` to require an
+`X-Fault-Token` header (and the same value as `PAYMENT_FAULT_INJECTION_TOKEN`
+in ai-service).
 
 ## Run locally
 

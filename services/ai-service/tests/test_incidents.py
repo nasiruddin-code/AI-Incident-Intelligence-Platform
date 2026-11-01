@@ -159,10 +159,17 @@ def test_scenario_run_mocked(client):
         "failure_reason": "Simulated payment gateway timeout",
     }
 
+    def fault_response(method, url, json=None, headers=None):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = json if method == "PUT" else {"failure_rate": 0.0, "latency_ms": 0}
+        return resp
+
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
     mock_client.__aexit__.return_value = None
     mock_client.post.return_value = mock_resp
+    mock_client.request.side_effect = fault_response
 
     with patch("app.services.scenario_runner.httpx.AsyncClient", return_value=mock_client):
         r = client.post(
@@ -181,6 +188,45 @@ def test_scenario_run_mocked(client):
     assert data["incident"]["scenario"] == "payment_timeout"
     assert len(data["incident"]["logs"]) > 0
     assert len(data["incident"]["traces"]) > 0
+
+    # Scenario config applied to payment-service, then previous config restored
+    calls = [(c.args[0], c.kwargs.get("json")) for c in mock_client.request.call_args_list]
+    assert calls == [
+        ("GET", None),
+        ("PUT", {"failure_rate": 1.0, "latency_ms": 0}),
+        ("PUT", {"failure_rate": 0.0, "latency_ms": 0}),
+    ]
+    assert mock_client.request.call_args_list[1].args[1] == "http://payment-service:8002/api/v1/fault-injection"
+    meta = data["incident"]["metadata"]
+    assert meta["failure_config_applied"] is True
+    assert meta["failure_config_restored"] is True
+    assert "restored the previous settings" in data["message"]
+
+
+def test_scenario_run_without_fault_injection_api(client):
+    import httpx
+
+    incident_store.clear()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 201
+    mock_resp.json.return_value = {"order_id": "o", "status": "paid"}
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = None
+    mock_client.post.return_value = mock_resp
+    mock_client.request.side_effect = httpx.ConnectError("refused")
+
+    with patch("app.services.scenario_runner.httpx.AsyncClient", return_value=mock_client):
+        r = client.post(
+            "/api/v1/incidents/scenarios/run",
+            json={"scenario": "payment_high_latency", "order_count": 1},
+        )
+    assert r.status_code == 201
+    data = r.json()
+    assert data["incident"]["metadata"]["failure_config_applied"] is False
+    assert "fault-injection API unavailable" in data["message"]
+    assert mock_client.request.call_count == 2  # GET + PUT attempted, no restore
 
 
 def test_update_status(client):

@@ -67,7 +67,15 @@ class ScenarioRunRequest(BaseModel):
     )
     payment_service_url: str = Field(
         default="http://payment-service:8002",
-        description="Base URL of payment-service (for future config injection)",
+        description="Base URL of payment-service (its /fault-injection API is used to apply the scenario)",
+    )
+    apply_failure_config: bool = Field(
+        default=True,
+        description="Set payment-service FAILURE_RATE/LATENCY_MS for this scenario before firing orders",
+    )
+    restore_failure_config: bool = Field(
+        default=True,
+        description="Put payment-service back to its previous failure settings afterwards",
     )
 
 

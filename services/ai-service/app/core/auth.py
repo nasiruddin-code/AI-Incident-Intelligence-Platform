@@ -1,6 +1,8 @@
 """Simple API-key access control (Week 15)."""
 from __future__ import annotations
 
+import secrets
+
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -21,6 +23,12 @@ PUBLIC_PATHS = {
 }
 
 
+def _bearer_token(header: str | None) -> str | None:
+    if header and header[:7].lower() == "bearer ":
+        return header[7:].strip() or None
+    return None
+
+
 class APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         settings = get_settings()
@@ -36,8 +44,12 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if path.endswith("/health") or path.endswith("/health/ready"):
             return await call_next(request)
 
-        provided = request.headers.get("X-API-Key") or request.query_params.get("api_key")
-        if provided != settings.API_KEY:
+        provided = (
+            request.headers.get("X-API-Key")
+            or _bearer_token(request.headers.get("Authorization"))  # e.g. Alertmanager webhooks
+            or request.query_params.get("api_key")
+        )
+        if not provided or not secrets.compare_digest(provided, settings.API_KEY):
             logger.warning("Unauthorized request path=%s", path)
             # Middleware runs outside FastAPI's exception handlers, so raising
             # HTTPException here would surface as a 500; respond directly.

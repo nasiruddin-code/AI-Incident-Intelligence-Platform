@@ -243,6 +243,24 @@ def _pg_list_summaries(status, severity, limit, offset) -> Tuple[List[IncidentSu
         session.close()
 
 
+def _pg_find_open_by_metadata(key: str, value: str) -> Optional[IncidentContext]:
+    from app.db.models import IncidentRow
+    from app.db.session import get_session
+
+    session = get_session()
+    try:
+        row = (
+            session.query(IncidentRow.payload)
+            .filter(IncidentRow.status.in_([s.value for s in OPEN_STATUSES]))
+            .filter(IncidentRow.payload[("metadata", key)].as_string() == value)
+            .order_by(IncidentRow.updated_at.desc())
+            .first()
+        )
+        return IncidentContext.model_validate(row.payload) if row else None
+    finally:
+        session.close()
+
+
 def _pg_stats() -> IncidentStats:
     """Aggregates computed in SQL; no incident payload is sent to the app."""
     from sqlalchemy import func
@@ -372,6 +390,16 @@ def list_summaries(
     if _use_db():
         return _pg_list_summaries(status, severity, limit, offset)
     return _mem_list_summaries(status, severity, limit, offset)
+
+
+def find_open_by_metadata(key: str, value: str) -> Optional[IncidentContext]:
+    """Most recently updated OPEN/INVESTIGATING incident whose metadata[key] == value."""
+    if _use_db():
+        return _pg_find_open_by_metadata(key, value)
+    for incident in _mem_list_all():
+        if incident.status in OPEN_STATUSES and incident.metadata.get(key) == value:
+            return incident
+    return None
 
 
 def stats() -> IncidentStats:
