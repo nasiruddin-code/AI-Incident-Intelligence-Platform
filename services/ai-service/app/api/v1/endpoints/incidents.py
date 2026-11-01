@@ -169,12 +169,15 @@ async def run_failure_scenario(
 def update_status(
     incident_id: str, new_status: IncidentStatus, background: BackgroundTasks
 ) -> IncidentContext:
-    incident = incident_store.get(incident_id)
-    if not incident:
+    def set_status(incident: IncidentContext) -> bool:
+        was_resolved = incident.status in (IncidentStatus.RESOLVED, IncidentStatus.CLOSED)
+        incident.status = new_status
+        return was_resolved
+
+    try:
+        incident, was_resolved = incident_store.update(incident_id, set_status)
+    except KeyError:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
-    was_resolved = incident.status in (IncidentStatus.RESOLVED, IncidentStatus.CLOSED)
-    incident.status = new_status
-    incident_store.save(incident)
     if new_status == IncidentStatus.RESOLVED and not was_resolved:
         background.add_task(notify, "incident_resolved", incident, {"source": "api"})
     return incident

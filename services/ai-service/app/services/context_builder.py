@@ -15,6 +15,7 @@ from app.schemas.incident import (
 )
 from app.schemas.telemetry import LogRecord, MetricPoint, SeverityLevel, Span, SpanStatus
 from app.services import incident_store
+from app.services.evidence import merge_new
 
 logger = get_logger(__name__)
 
@@ -100,38 +101,44 @@ def _evidence_summary(
 
 
 def build_context(req: BuildContextRequest) -> IncidentContext:
-    """Assemble (or enrich) an IncidentContext from provided telemetry."""
-    logs = list(req.logs)
-    metrics = list(req.metrics)
-    traces = list(req.traces)
+    """Assemble (or enrich) an IncidentContext from provided telemetry.
+
+    Evidence already on the incident (same content) is not added twice.
+    """
+    logs = merge_new([], req.logs)
+    metrics = merge_new([], req.metrics)
+    traces = merge_new([], req.traces)
 
     affected = _derive_services(req.affected_services, logs, metrics, traces)
     severity = _derive_severity(logs, traces, req.severity)
     window = _derive_time_window(req.time_window, logs, metrics, traces)
     summary = _evidence_summary(logs, metrics, traces, affected)
 
+    def enrich(existing: IncidentContext) -> None:
+        existing.logs = merge_new(existing.logs, logs)
+        existing.metrics = merge_new(existing.metrics, metrics)
+        existing.traces = merge_new(existing.traces, traces)
+        existing.affected_services = _derive_services(
+            existing.affected_services, existing.logs, existing.metrics, existing.traces
+        )
+        existing.severity = _derive_severity(existing.logs, existing.traces, existing.severity)
+        existing.time_window = _derive_time_window(
+            existing.time_window, existing.logs, existing.metrics, existing.traces
+        )
+        existing.evidence_summary = _evidence_summary(
+            existing.logs, existing.metrics, existing.traces, existing.affected_services
+        )
+        if req.notes:
+            existing.notes = (existing.notes or "") + "\n" + req.notes
+        if req.title:
+            existing.title = req.title
+
     if req.incident_id:
-        existing = incident_store.get(req.incident_id)
-        if existing:
-            # Enrich existing incident
-            existing.logs = existing.logs + logs
-            existing.metrics = existing.metrics + metrics
-            existing.traces = existing.traces + traces
-            existing.affected_services = _derive_services(
-                existing.affected_services, existing.logs, existing.metrics, existing.traces
-            )
-            existing.severity = _derive_severity(existing.logs, existing.traces, existing.severity)
-            existing.time_window = _derive_time_window(
-                existing.time_window, existing.logs, existing.metrics, existing.traces
-            )
-            existing.evidence_summary = _evidence_summary(
-                existing.logs, existing.metrics, existing.traces, existing.affected_services
-            )
-            if req.notes:
-                existing.notes = (existing.notes or "") + "\n" + req.notes
-            if req.title:
-                existing.title = req.title
-            incident_store.save(existing)
+        try:
+            existing, _ = incident_store.update(req.incident_id, enrich)
+        except KeyError:
+            pass  # no such incident yet: create it with the requested ID below
+        else:
             logger.info("Enriched incident %s — %s", existing.incident_id, existing.evidence_summary)
             return existing
 
@@ -179,6 +186,7 @@ def build_from_scenario_results(
     )
     incident = build_context(req)
     if metadata:
-        incident.metadata = metadata
-        incident_store.save(incident)
+        incident, _ = incident_store.update(
+            incident.incident_id, lambda inc: inc.metadata.update(metadata)
+        )
     return incident

@@ -119,6 +119,38 @@ configured, protected routes return 503 instead of running unauthenticated.
 with `Retry-After`; responses carry `X-RateLimit-Limit` / `X-RateLimit-Remaining`.
 Limits are per process — with several replicas, each enforces its own.
 
+## Database: migrations and concurrency
+
+**Migrations.** The schema is managed by Alembic (`app/db/migrations/`) and
+upgraded to head automatically at startup (`init_db`). A database created by
+the old `create_all` code is stamped at the baseline and migrated in place; on
+Postgres an advisory lock keeps concurrently starting replicas from migrating
+twice. To change the schema:
+
+```bash
+cd services/ai-service
+# edit app/db/models.py, then:
+alembic revision -m "describe the change"   # writes app/db/migrations/versions/<rev>_*.py
+alembic upgrade head                        # or just restart the service
+alembic downgrade -1
+```
+
+**Storage.** `incidents` holds each incident's fields (small JSON payload,
+indexed status/severity); `incident_evidence` holds one row per log, metric
+point or span, de-duplicated by content. Adding evidence writes only the new
+rows; re-ingesting the same evidence is a no-op.
+
+**Concurrency.** Incidents carry a `version`. `incident_store.update(id, fn)`
+is how code changes an incident: on Postgres it holds a row lock
+(`SELECT ... FOR UPDATE`) so concurrent writers queue instead of overwriting
+each other; slow work (AI calls) happens before the update, so the lock is
+held only for the write. A plain `save()` with a stale version raises
+`ConcurrentModificationError`, which the API returns as **409 Conflict**.
+
+**Tests.** `tests/test_persistence.py` runs against memory, SQLite and — with
+`TEST_DATABASE_URL` set to a disposable Postgres database — Postgres (CI does
+this in the *test (ai-service on Postgres)* job).
+
 ## Logging and request IDs
 
 `LOG_FORMAT=json` (set for all services in `docker-compose.yml`) writes one JSON

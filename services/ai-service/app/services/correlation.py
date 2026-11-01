@@ -282,56 +282,59 @@ def _score_severity(
 
 
 def correlate_incident(incident_id: str) -> CorrelationResult:
-    """Run correlation + anomaly detection + severity scoring on a stored incident."""
-    incident = incident_store.get(incident_id)
-    if not incident:
-        raise KeyError(f"Incident {incident_id} not found")
+    """Run correlation + anomaly detection + severity scoring on a stored incident.
 
-    logs = incident.logs
-    metrics = incident.metrics
-    traces = incident.traces
+    Runs inside incident_store.update(): if another writer changes the
+    incident meanwhile, the analysis is redone on the merged state.
+    """
 
-    trace_links, trace_ids = _correlate_by_trace_id(logs, traces)
-    service_links, service_graph = _correlate_by_service(logs, metrics, traces)
-    links = trace_links + service_links
+    def analyse(incident: IncidentContext) -> CorrelationResult:
+        logs = incident.logs
+        metrics = incident.metrics
+        traces = incident.traces
 
-    anomalies = _detect_anomalies(logs, metrics, traces)
-    severity = _score_severity(incident, anomalies)
+        trace_links, trace_ids = _correlate_by_trace_id(logs, traces)
+        service_links, service_graph = _correlate_by_service(logs, metrics, traces)
+        links = trace_links + service_links
 
-    # Update incident severity if scoring is higher
-    if _SEV_RANK[severity.level] > _SEV_RANK[incident.severity]:
-        incident.severity = severity.level
-    incident.status = incident.status  # unchanged unless caller updates
-    incident.metadata = {
-        **incident.metadata,
-        "severity_score": severity.score,
-        "anomaly_count": len(anomalies),
-        "correlation_link_count": len(links),
-    }
-    # Replace (not append) any previous correlation suffix so re-running
-    # correlation (agent, RCA, API) keeps the summary stable.
-    base_summary = (incident.evidence_summary or "").split(_CORRELATION_MARKER)[0]
-    incident.evidence_summary = (
-        f"{base_summary}{_CORRELATION_MARKER}"
-        f"{len(links)} links, {len(anomalies)} anomalies, "
-        f"severity_score={severity.score}"
-    ).strip(" |")
-    incident_store.save(incident)
+        anomalies = _detect_anomalies(logs, metrics, traces)
+        severity = _score_severity(incident, anomalies)
 
-    summary = (
-        f"Incident {incident_id}: {len(links)} correlation link(s), "
-        f"{len(anomalies)} anomal(ies), severity {severity.level.value} "
-        f"({severity.score}/100). Trace IDs: {len(trace_ids)}."
-    )
-    logger.info(summary)
+        # Update incident severity if scoring is higher
+        if _SEV_RANK[severity.level] > _SEV_RANK[incident.severity]:
+            incident.severity = severity.level
+        incident.metadata = {
+            **incident.metadata,
+            "severity_score": severity.score,
+            "anomaly_count": len(anomalies),
+            "correlation_link_count": len(links),
+        }
+        # Replace (not append) any previous correlation suffix so re-running
+        # correlation (agent, RCA, API) keeps the summary stable.
+        base_summary = (incident.evidence_summary or "").split(_CORRELATION_MARKER)[0]
+        incident.evidence_summary = (
+            f"{base_summary}{_CORRELATION_MARKER}"
+            f"{len(links)} links, {len(anomalies)} anomalies, "
+            f"severity_score={severity.score}"
+        ).strip(" |")
 
-    return CorrelationResult(
-        incident_id=incident_id,
-        links=links,
-        anomalies=anomalies,
-        severity=severity,
-        correlated_trace_ids=trace_ids,
-        service_graph=service_graph,
-        summary=summary,
-        incident=incident,
-    )
+        summary = (
+            f"Incident {incident_id}: {len(links)} correlation link(s), "
+            f"{len(anomalies)} anomal(ies), severity {severity.level.value} "
+            f"({severity.score}/100). Trace IDs: {len(trace_ids)}."
+        )
+        return CorrelationResult(
+            incident_id=incident_id,
+            links=links,
+            anomalies=anomalies,
+            severity=severity,
+            correlated_trace_ids=trace_ids,
+            service_graph=service_graph,
+            summary=summary,
+            incident=incident,
+        )
+
+    incident, result = incident_store.update(incident_id, analyse)
+    result.incident = incident  # the stored copy, with its new version
+    logger.info(result.summary)
+    return result

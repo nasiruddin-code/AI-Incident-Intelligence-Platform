@@ -162,19 +162,22 @@ class RCAEngine:
             system_instruction=RCA_PROMPT.system_instruction,
         )
 
-        # Persist RCA onto incident metadata/notes for later weeks
-        incident.metadata = {
-            **incident.metadata,
-            "rca_primary_cause": result.primary_cause,
-            "rca_confidence": result.confidence,
-            "rca_provider": info.provider,
-            "rca_degraded": info.degraded,
-            "rca_prompt": RCA_PROMPT.name,
-        }
-        if result.summary:
-            note_line = f"[RCA] {result.summary}"
-            incident.notes = (incident.notes + "\n" + note_line) if incident.notes else note_line
-        await run_in_threadpool(incident_store.save, incident)
+        # Persist RCA onto incident metadata/notes. Applied to a fresh copy so
+        # changes made while the model was answering are kept, not overwritten.
+        def record(fresh: IncidentContext) -> None:
+            fresh.metadata = {
+                **fresh.metadata,
+                "rca_primary_cause": result.primary_cause,
+                "rca_confidence": result.confidence,
+                "rca_provider": info.provider,
+                "rca_degraded": info.degraded,
+                "rca_prompt": RCA_PROMPT.name,
+            }
+            if result.summary:
+                note_line = f"[RCA] {result.summary}"
+                fresh.notes = (fresh.notes + "\n" + note_line) if fresh.notes else note_line
+
+        await run_in_threadpool(incident_store.update, incident_id, record)
 
         return RCAResponse(
             incident_id=incident_id,

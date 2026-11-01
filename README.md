@@ -140,3 +140,11 @@ Incidents are stored in **PostgreSQL** when `DATABASE_URL` is set (Compose defau
 
 # Without DB (tests / minimal local): leave DATABASE_URL empty → in-memory
 ```
+
+**Schema migrations** (Alembic, `services/ai-service/app/db/migrations/`) run
+automatically when ai-service starts; databases created before migrations
+existed are detected and upgraded in place. Evidence (logs / metrics / spans)
+is stored one row per item in `incident_evidence`; incidents carry a `version`
+used for optimistic locking, so concurrent updates (API, background
+investigations, alerts) are never silently overwritten. See the ai-service
+README for creating new migrations.

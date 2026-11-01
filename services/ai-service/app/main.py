@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.auth import APIKeyMiddleware
 from app.core.rate_limit import RateLimitMiddleware
@@ -12,6 +13,7 @@ from app.core.logging import RequestIDMiddleware, configure_logging, get_logger
 from app.core.telemetry import instrument_app, setup_telemetry, shutdown_telemetry
 from app.db.session import init_db
 from app.integrations.http import close_http_client
+from app.services.incident_store import ConcurrentModificationError
 
 logger = get_logger(__name__)
 
@@ -79,6 +81,13 @@ def create_app() -> FastAPI:
     )
     # Outermost: every response (including 401/429) carries X-Request-ID
     app.add_middleware(RequestIDMiddleware)
+
+    @app.exception_handler(ConcurrentModificationError)
+    async def _conflict(request: Request, exc: ConcurrentModificationError) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": f"Incident was modified concurrently; retry the request. ({exc})"},
+        )
 
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
     # Week 14: Prometheus scrape path (unversioned)

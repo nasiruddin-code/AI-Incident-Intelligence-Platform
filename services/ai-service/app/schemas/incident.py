@@ -44,6 +44,10 @@ class IncidentContext(BaseModel):
     )
     notes: Optional[str] = Field(None, description="Free text notes or AI summary regarding the incident")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Extra structured metadata")
+    version: int = Field(
+        0,
+        description="Optimistic-lock version, incremented on every save (0 = not stored yet)",
+    )
 
 
 # --- API request / response models ----------------------------------------

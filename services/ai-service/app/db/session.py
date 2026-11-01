@@ -47,12 +47,10 @@ def get_session() -> Session:
 
 
 def init_db() -> None:
-    """Create tables if they do not exist."""
+    """Bring the schema up to date via Alembic migrations."""
     if not is_db_enabled():
         logger.info("DATABASE_URL not set — using in-memory incident store")
         return
-    from app.db.models import Base
+    from app.db.migrate import upgrade_to_head
 
-    engine = get_engine()
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables ensured")
+    upgrade_to_head(get_engine())

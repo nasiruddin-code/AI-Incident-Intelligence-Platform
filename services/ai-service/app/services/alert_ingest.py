@@ -105,10 +105,13 @@ def ingest(payload: AlertmanagerWebhook) -> AlertIngestResult:
         if not existing:
             return AlertIngestResult(action="ignored", alertnames=alertnames,
                                      detail="resolved notification for a group with no open incident")
-        existing.status = IncidentStatus.RESOLVED
         line = f"[alert] Resolved by Alertmanager at {datetime.now(timezone.utc).isoformat()}"
-        existing.notes = f"{existing.notes}\n{line}" if existing.notes else line
-        incident_store.save(existing)
+
+        def resolve(incident) -> None:
+            incident.status = IncidentStatus.RESOLVED
+            incident.notes = f"{incident.notes}\n{line}" if incident.notes else line
+
+        incident_store.update(existing.incident_id, resolve)
         logger.info("Alert group resolved -> incident %s RESOLVED", existing.incident_id)
         return AlertIngestResult(incident_id=existing.incident_id, action="resolved", alertnames=alertnames)
 
@@ -137,15 +140,20 @@ def ingest(payload: AlertmanagerWebhook) -> AlertIngestResult:
         ))
         action = "created"
 
-    incident.metadata = {
-        **incident.metadata,
-        "source": "alertmanager",
-        GROUP_KEY: payload.groupKey,
-        "alertnames": sorted(set(incident.metadata.get("alertnames", [])) | set(alertnames)),
-        "alert_fingerprints": sorted(seen | {_alert_id(a) for a in firing}),
-        "alertmanager_url": payload.externalURL,
-    }
-    incident_store.save(incident)
+    def tag(fresh) -> None:
+        meta = fresh.metadata
+        fresh.metadata = {
+            **meta,
+            "source": "alertmanager",
+            GROUP_KEY: payload.groupKey,
+            "alertnames": sorted(set(meta.get("alertnames", [])) | set(alertnames)),
+            "alert_fingerprints": sorted(
+                set(meta.get("alert_fingerprints", [])) | {_alert_id(a) for a in firing}
+            ),
+            "alertmanager_url": payload.externalURL,
+        }
+
+    incident, _ = incident_store.update(incident.incident_id, tag)
     logger.info(
         "Alert group %s -> incident %s %s (%d new alert(s))",
         payload.groupKey, incident.incident_id, action, len(new_alerts),
@@ -187,15 +195,18 @@ async def investigate(incident_id: str, provider: AIProvider, settings: Settings
             if runbook is not None:
                 await _notify_current("runbook_completed", incident_id, runbook_details(runbook), settings)
 
-    incident = await run_in_threadpool(incident_store.get, incident_id)
-    if incident:
+    def record(incident) -> None:
         if incident.status == IncidentStatus.OPEN:
             incident.status = IncidentStatus.INVESTIGATING
         incident.metadata = {
             **incident.metadata,
             "auto_investigation": {"finished_at": datetime.now(timezone.utc).isoformat(), "steps": steps},
         }
-        await run_in_threadpool(incident_store.save, incident)
+
+    try:
+        await run_in_threadpool(incident_store.update, incident_id, record)
+    except KeyError:
+        logger.warning("Incident %s was deleted during auto-investigation", incident_id)
     logger.info("Auto-investigation for %s finished: %s", incident_id, steps)
     return steps
 

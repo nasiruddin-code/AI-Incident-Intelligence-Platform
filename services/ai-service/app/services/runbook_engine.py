@@ -73,16 +73,19 @@ class RunbookEngine:
         )
 
         # Persist key fields for agent / dashboard later
-        incident.metadata = {
-            **incident.metadata,
-            "runbook_title": result.title,
-            "runbook_confidence": result.confidence,
-            "runbook_provider": info.provider,
-            "runbook_degraded": info.degraded,
-            "runbook_prompt": RUNBOOK_PROMPT.name,
-            "remediation_count": len(result.remediation_actions),
-        }
-        await run_in_threadpool(incident_store.save, incident)
+        def record(fresh: IncidentContext) -> None:
+            fresh.metadata = {
+                **fresh.metadata,
+                "runbook_title": result.title,
+                "runbook_confidence": result.confidence,
+                "runbook_provider": info.provider,
+                "runbook_degraded": info.degraded,
+                "runbook_prompt": RUNBOOK_PROMPT.name,
+                "remediation_count": len(result.remediation_actions),
+            }
+
+        # Applied to a fresh copy: changes made during the model call are kept.
+        incident, _ = await run_in_threadpool(incident_store.update, incident_id, record)
 
         return RunbookResponse(
             incident_id=incident_id,
