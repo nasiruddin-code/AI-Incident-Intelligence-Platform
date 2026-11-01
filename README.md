@@ -104,6 +104,7 @@ See individual service READMEs and `observability/README.md` for details.
 
 | Doc | Purpose |
 |-----|---------|
+| [docs/SYSTEM_FLOW.md](docs/SYSTEM_FLOW.md) | **End-to-end flow**: startup, entry points, alert → incident → investigation → notify → resolve |
 | [DEMO.md](DEMO.md) | Step-by-step demo script |
 | [postman/](postman/) | Postman collection + usage guide |
 | [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) | Checklist + production gaps |
