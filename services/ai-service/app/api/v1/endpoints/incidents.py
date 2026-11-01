@@ -3,6 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
+from starlette.concurrency import run_in_threadpool
 from app.core.logging import get_logger
 from app.core.dependencies import RCAEngineDep, RunbookEngineDep, SettingsDep
 from app.services.telemetry_enrichment import TelemetryEnrichmentService
@@ -42,7 +43,7 @@ logger = get_logger(__name__)
     status_code=status.HTTP_201_CREATED,
     summary="Create an empty incident shell",
 )
-async def create_incident(payload: IncidentCreate, background: BackgroundTasks) -> IncidentContext:
+def create_incident(payload: IncidentCreate, background: BackgroundTasks) -> IncidentContext:
     now = datetime.now(timezone.utc)
     incident = IncidentContext(
         incident_id=str(uuid.uuid4()),
@@ -62,7 +63,7 @@ async def create_incident(payload: IncidentCreate, background: BackgroundTasks) 
 
 
 @router.get("", response_model=IncidentListResponse, summary="List incidents (paginated)")
-async def list_incidents(
+def list_incidents(
     status_filter: Optional[IncidentStatus] = Query(None, alias="status"),
     severity: Optional[SeverityLevel] = None,
     limit: int = Query(50, ge=1, le=500),
@@ -85,7 +86,7 @@ async def list_incidents(
     response_model=IncidentSummaryListResponse,
     summary="List incident summaries (no evidence, paginated)",
 )
-async def list_incident_summaries(
+def list_incident_summaries(
     status_filter: Optional[IncidentStatus] = Query(None, alias="status"),
     severity: Optional[SeverityLevel] = None,
     limit: int = Query(50, ge=1, le=500),
@@ -100,7 +101,7 @@ async def list_incident_summaries(
 
 
 @router.get("/{incident_id}", response_model=IncidentContext, summary="Get incident by ID")
-async def get_incident(incident_id: str) -> IncidentContext:
+def get_incident(incident_id: str) -> IncidentContext:
     incident = incident_store.get(incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
@@ -113,7 +114,7 @@ async def get_incident(incident_id: str) -> IncidentContext:
     status_code=status.HTTP_201_CREATED,
     summary="Build or enrich Incident Context from telemetry evidence",
 )
-async def build_incident_context(
+def build_incident_context(
     payload: BuildContextRequest, background: BackgroundTasks
 ) -> IncidentContext:
     """Accept logs/metrics/traces and assemble a normalized IncidentContext.
@@ -165,7 +166,7 @@ async def run_failure_scenario(
     response_model=IncidentContext,
     summary="Update incident status",
 )
-async def update_status(
+def update_status(
     incident_id: str, new_status: IncidentStatus, background: BackgroundTasks
 ) -> IncidentContext:
     incident = incident_store.get(incident_id)
@@ -184,7 +185,7 @@ async def update_status(
     response_model=CorrelationResult,
     summary="Correlate evidence + detect anomalies + score severity",
 )
-async def correlate(incident_id: str) -> CorrelationResult:
+def correlate(incident_id: str) -> CorrelationResult:
     """Run Week 9 correlation pipeline on a stored incident.
 
     - Links logs ↔ spans by trace_id
@@ -245,7 +246,7 @@ async def run_rca(
         result = await rca_engine.analyze(incident_id, run_correlation=run_correlation)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
-    incident = incident_store.get(incident_id)
+    incident = await run_in_threadpool(incident_store.get, incident_id)
     if incident:
         background.add_task(notify, "rca_completed", incident, rca_details(result))
     return result
@@ -271,7 +272,7 @@ async def generate_runbook(
         result = await runbook_engine.generate(incident_id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
-    incident = incident_store.get(incident_id)
+    incident = await run_in_threadpool(incident_store.get, incident_id)
     if incident:
         background.add_task(notify, "runbook_completed", incident, runbook_details(result))
     return result

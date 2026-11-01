@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
-from app.core.logging import configure_logging, get_logger
+from app.core.logging import RequestIDMiddleware, configure_logging, get_logger
 from app.core.telemetry import instrument_app, setup_telemetry, shutdown_telemetry
 
 logger = get_logger(__name__)
@@ -36,7 +36,7 @@ def _make_lifespan(settings: Settings):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    configure_logging(settings.LOG_LEVEL)
+    configure_logging(settings.LOG_LEVEL, settings.LOG_FORMAT, settings.SERVICE_NAME)
 
     app = FastAPI(
         title=settings.APP_NAME,
@@ -52,6 +52,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Outermost: every response (including 401/429) carries X-Request-ID
+    app.add_middleware(RequestIDMiddleware)
 
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
     return app

@@ -1,3 +1,4 @@
+import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -242,3 +243,37 @@ def test_incident_not_found(client):
     incident_store.clear()
     r = client.get("/api/v1/incidents/does-not-exist")
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_fire_orders_runs_concurrently_with_cap():
+    import asyncio
+
+    from app.services import scenario_runner
+
+    in_flight = peak = 0
+
+    async def slow_post(url, json):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.05)
+        in_flight -= 1
+        resp = MagicMock()
+        resp.status_code = 201
+        resp.json.return_value = {"order_id": json["customer_id"], "status": "paid"}
+        return resp
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.post.side_effect = slow_post
+
+    with patch("app.services.scenario_runner.httpx.AsyncClient", return_value=mock_client):
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        ok, failed = await scenario_runner._fire_orders("http://order-service:8001", 12, concurrency=4)
+        elapsed = loop.time() - started
+
+    assert len(ok) == 12 and failed == []
+    assert peak == 4
+    assert elapsed < 0.4  # 3 waves of 50ms, not 12 sequential calls (0.6s)

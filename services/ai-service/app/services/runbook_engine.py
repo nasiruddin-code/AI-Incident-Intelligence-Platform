@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
+from starlette.concurrency import run_in_threadpool
 from app.core.logging import get_logger
 from app.prompts.runbook import RUNBOOK_PROMPT
 from app.providers.base import AIProvider
@@ -41,7 +42,7 @@ class RunbookEngine:
         self._provider = provider
 
     async def generate(self, incident_id: str) -> RunbookResponse:
-        incident = incident_store.get(incident_id)
+        incident = await run_in_threadpool(incident_store.get, incident_id)
         if not incident:
             raise KeyError(f"Incident {incident_id} not found")
 
@@ -81,7 +82,7 @@ class RunbookEngine:
             "runbook_prompt": RUNBOOK_PROMPT.name,
             "remediation_count": len(result.remediation_actions),
         }
-        incident_store.save(incident)
+        await run_in_threadpool(incident_store.save, incident)
 
         return RunbookResponse(
             incident_id=incident_id,

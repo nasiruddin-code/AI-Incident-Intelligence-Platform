@@ -28,6 +28,7 @@ services:
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=ai-service
+      - LOG_FORMAT=json
       - PROMETHEUS_URL=http://prometheus:9090
       - LOKI_URL=http://loki:3100
       - TEMPO_URL=http://tempo:3200
@@ -147,6 +148,7 @@ services:
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=payment-service
+      - LOG_FORMAT=json
     networks:
       - observability-net
     depends_on:
@@ -164,6 +166,7 @@ services:
       - PAYMENT_SERVICE_URL=http://payment-service:8002
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=order-service
+      - LOG_FORMAT=json
     networks:
       - observability-net
     depends_on:

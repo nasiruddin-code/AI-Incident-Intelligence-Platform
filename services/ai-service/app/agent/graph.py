@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, TypedDict
 
+from starlette.concurrency import run_in_threadpool
 from app.agent import tools as agent_tools
 from app.agent.planner import run_planner
 from app.core.config import get_settings
@@ -87,7 +88,7 @@ async def _run_sequential(
 
     # 1. Resolve incident
     if not incident_id:
-        listed = agent_tools.tool_list_incidents()
+        listed = await run_in_threadpool(agent_tools.tool_list_incidents)
         steps.append(_record("list_incidents", "", True, listed))
         findings["list_incidents"] = listed
         if listed.get("count", 0) == 0:
@@ -102,7 +103,7 @@ async def _run_sequential(
         incident_id = listed["incidents"][0]["incident_id"]
         findings["selected_incident_id"] = incident_id
 
-    info = agent_tools.tool_get_incident(incident_id)
+    info = await run_in_threadpool(agent_tools.tool_get_incident, incident_id)
     ok = "error" not in info
     steps.append(_record("get_incident", f"incident_id={incident_id}", ok, info))
     findings["incident"] = info
@@ -131,13 +132,13 @@ async def _run_sequential(
             if kw in req.question.lower():
                 query = kw
                 break
-    evidence = agent_tools.tool_search_evidence(incident_id, query)
+    evidence = await run_in_threadpool(agent_tools.tool_search_evidence, incident_id, query)
     steps.append(_record("search_evidence", f"query={query}", True, evidence))
     findings["evidence"] = evidence
 
     # 3. Correlate
     if req.run_correlation:
-        corr = agent_tools.tool_correlate(incident_id)
+        corr = await run_in_threadpool(agent_tools.tool_correlate, incident_id)
         steps.append(_record("correlate", f"incident_id={incident_id}", "error" not in corr, corr))
         findings["correlation"] = corr
 
@@ -177,7 +178,7 @@ async def _run_langgraph(
         incident_id = state.get("incident_id")
 
         if not incident_id:
-            listed = agent_tools.tool_list_incidents()
+            listed = await run_in_threadpool(agent_tools.tool_list_incidents)
             steps.append(_record("list_incidents", "", True, listed).model_dump())
             findings["list_incidents"] = listed
             if listed.get("count", 0) > 0:
@@ -185,7 +186,7 @@ async def _run_langgraph(
                 findings["selected_incident_id"] = incident_id
 
         if incident_id:
-            info = agent_tools.tool_get_incident(incident_id)
+            info = await run_in_threadpool(agent_tools.tool_get_incident, incident_id)
             steps.append(
                 _record("get_incident", f"incident_id={incident_id}", "error" not in info, info).model_dump()
             )
@@ -211,7 +212,7 @@ async def _run_langgraph(
             if kw in q:
                 query = kw
                 break
-        evidence = agent_tools.tool_search_evidence(incident_id, query)
+        evidence = await run_in_threadpool(agent_tools.tool_search_evidence, incident_id, query)
         steps.append(_record("search_evidence", f"query={query}", True, evidence).model_dump())
         findings["evidence"] = evidence
         return {**state, "steps": steps, "findings": findings}
@@ -224,7 +225,7 @@ async def _run_langgraph(
         incident_id = state.get("incident_id")
         if not incident_id:
             return state
-        corr = agent_tools.tool_correlate(incident_id)
+        corr = await run_in_threadpool(agent_tools.tool_correlate, incident_id)
         steps.append(
             _record("correlate", f"incident_id={incident_id}", "error" not in corr, corr).model_dump()
         )

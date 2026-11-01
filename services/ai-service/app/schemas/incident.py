@@ -60,6 +60,7 @@ class ScenarioRunRequest(BaseModel):
     """Trigger a reproducible failure scenario against the sample microservices."""
     scenario: ScenarioType = Field(..., description="Which failure scenario to run")
     order_count: int = Field(default=5, ge=1, le=50, description="How many orders to fire")
+    concurrency: int = Field(default=5, ge=1, le=20, description="Orders in flight at once")
     # Override targets (defaults point at docker-compose service names)
     order_service_url: str = Field(
         default="http://order-service:8001",

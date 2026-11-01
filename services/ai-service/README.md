@@ -119,6 +119,19 @@ configured, protected routes return 503 instead of running unauthenticated.
 with `Retry-After`; responses carry `X-RateLimit-Limit` / `X-RateLimit-Remaining`.
 Limits are per process — with several replicas, each enforces its own.
 
+## Logging and request IDs
+
+`LOG_FORMAT=json` (set for all services in `docker-compose.yml`) writes one JSON
+object per line — `timestamp`, `level`, `logger`, `message`, `service`,
+`request_id`, `trace_id`, `span_id`, `exception` — including uvicorn's access
+log. Locally the default `text` format adds `req=<id>` to each line.
+
+Every response carries `X-Request-ID`: a well-formed incoming value is reused
+(so a caller or gateway can set it), otherwise one is generated. All logs for
+that request share the ID, including threadpool work and background tasks such
+as Alertmanager-triggered investigations. Logs are also exported over OTLP to
+Loki, where `trace_id` links them to Tempo traces.
+
 ## AI cost control
 
 - **Usage on every response** — RCA, runbook and log-analysis responses include

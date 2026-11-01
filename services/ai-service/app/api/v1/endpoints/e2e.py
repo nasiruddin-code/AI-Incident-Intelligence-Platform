@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from starlette.concurrency import run_in_threadpool
 from app.core.dependencies import AIProviderDep, SettingsDep
 from app.core.logging import get_logger
 from app.schemas.incident import BuildContextRequest, ScenarioType
@@ -145,7 +146,8 @@ async def run_e2e(
     ]
 
     try:
-        incident = build_context(
+        incident = await run_in_threadpool(
+            build_context,
             BuildContextRequest(
                 title=payload.title,
                 severity=SeverityLevel.ERROR,
@@ -177,7 +179,7 @@ async def run_e2e(
     # 2. Correlate
     if payload.run_correlation:
         try:
-            corr = correlate_incident(incident_id)
+            corr = await run_in_threadpool(correlate_incident, incident_id)
             steps.append(
                 E2EStep(
                     name="correlate",

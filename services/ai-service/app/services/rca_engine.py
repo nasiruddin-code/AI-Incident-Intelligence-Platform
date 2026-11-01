@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+from starlette.concurrency import run_in_threadpool
 from app.core.logging import get_logger
 from app.prompts.rca import RCA_PROMPT
 from app.providers.base import AIProvider
@@ -114,14 +115,14 @@ class RCAEngine:
         If run_correlation is True and no correlation is supplied, correlation
         is executed first so the model sees anomaly/severity context.
         """
-        incident = incident_store.get(incident_id)
+        incident = await run_in_threadpool(incident_store.get, incident_id)
         if not incident:
             raise KeyError(f"Incident {incident_id} not found")
 
         corr = correlation
         if run_correlation and corr is None:
             try:
-                corr = correlate_incident(incident_id)
+                corr = await run_in_threadpool(correlate_incident, incident_id)
                 incident = corr.incident  # refreshed
             except Exception as exc:
                 logger.warning("Correlation step failed, continuing without it: %s", exc)
@@ -173,7 +174,7 @@ class RCAEngine:
         if result.summary:
             note_line = f"[RCA] {result.summary}"
             incident.notes = (incident.notes + "\n" + note_line) if incident.notes else note_line
-        incident_store.save(incident)
+        await run_in_threadpool(incident_store.save, incident)
 
         return RCAResponse(
             incident_id=incident_id,

@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = Field(default_factory=lambda: ["*"])
 
     LOG_LEVEL: str = "INFO"
+    # text (local dev) | json (one JSON object per line, for log pipelines)
+    LOG_FORMAT: Literal["text", "json"] = "text"
 
     AI_PROVIDER: ProviderName = "mock"
     # Real providers tried in order after AI_PROVIDER fails (mock fallback comes last).

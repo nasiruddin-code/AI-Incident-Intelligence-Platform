@@ -6,12 +6,14 @@ that mirrors what would appear in Loki/Tempo/Prometheus.
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from starlette.concurrency import run_in_threadpool
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.schemas.incident import (
@@ -95,28 +97,29 @@ async def _fault_injection(
 async def _fire_orders(
     order_service_url: str,
     count: int,
+    concurrency: int = 5,
 ) -> Tuple[List[dict], List[dict]]:
-    """POST N orders; return (successes, failures)."""
-    successes: List[dict] = []
-    failures: List[dict] = []
+    """POST N orders, at most `concurrency` in flight; return (successes, failures)."""
     base = order_service_url.rstrip("/")
+    limit = asyncio.Semaphore(max(1, concurrency))
+
+    async def one(client: httpx.AsyncClient, i: int) -> Tuple[bool, dict]:
+        async with limit:
+            try:
+                resp = await client.post(f"{base}/api/v1/orders", json=_order_payload(i))
+            except httpx.HTTPError as exc:
+                logger.warning("Order request failed: %s", exc)
+                return False, {"error": str(exc)}
+        data = resp.json() if resp.status_code < 500 else {"error": resp.text}
+        if resp.status_code == 201 and data.get("status") == "paid":
+            return True, data
+        return False, data if isinstance(data, dict) else {"error": str(data)}
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        for i in range(count):
-            try:
-                resp = await client.post(
-                    f"{base}/api/v1/orders",
-                    json=_order_payload(i),
-                )
-                data = resp.json() if resp.status_code < 500 else {"error": resp.text}
-                if resp.status_code == 201 and data.get("status") == "paid":
-                    successes.append(data)
-                else:
-                    failures.append(data if isinstance(data, dict) else {"error": str(data)})
-            except httpx.HTTPError as exc:
-                failures.append({"error": str(exc)})
-                logger.warning("Order request failed: %s", exc)
+        outcomes = await asyncio.gather(*(one(client, i) for i in range(count)))
 
+    successes = [data for ok, data in outcomes if ok]
+    failures = [data for ok, data in outcomes if not ok]
     return successes, failures
 
 
@@ -297,7 +300,9 @@ async def run_scenario(req: ScenarioRunRequest) -> ScenarioRunResult:
         previous = await _fault_injection(req.payment_service_url, "GET")
         applied = await _fault_injection(req.payment_service_url, "PUT", target) is not None
     try:
-        successes, failures = await _fire_orders(req.order_service_url, req.order_count)
+        successes, failures = await _fire_orders(
+            req.order_service_url, req.order_count, req.concurrency
+        )
     finally:
         if applied and req.restore_failure_config and previous is not None:
             restored = await _fault_injection(req.payment_service_url, "PUT", previous) is not None
@@ -321,7 +326,8 @@ async def run_scenario(req: ScenarioRunRequest) -> ScenarioRunResult:
         f"{config_note} {cfg['description']}"
     )
 
-    incident: IncidentContext = build_from_scenario_results(
+    incident: IncidentContext = await run_in_threadpool(
+        build_from_scenario_results,
         scenario=req.scenario,
         title=cfg["title"],
         affected_services=["order-service", "payment-service"],

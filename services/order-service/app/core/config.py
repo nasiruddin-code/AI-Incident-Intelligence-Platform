@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = Field(default_factory=lambda: ["*"])
 
     LOG_LEVEL: str = "INFO"
+    # text (local dev) | json (one JSON object per line, for log pipelines)
+    LOG_FORMAT: Literal["text", "json"] = "text"
     SERVICE_NAME: str = "order-service"
 
     # Downstream dependency
