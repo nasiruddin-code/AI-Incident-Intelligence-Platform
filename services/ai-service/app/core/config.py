@@ -88,6 +88,22 @@ class Settings(BaseSettings):
     TEMPO_URL: str = "http://tempo:3200"
     OBSERVABILITY_TIMEOUT_SECONDS: float = 10.0
 
+    # Log monitor: polls Loki (read-only) for error patterns and opens incidents
+    LOG_MONITOR_ENABLED: bool = False
+    LOG_MONITOR_INTERVAL_SECONDS: int = 30
+    LOG_MONITOR_QUERY: str = '{source=~"docker|file"}'  # stream selector for watched logs
+    LOG_MONITOR_SERVICE_LABEL: str = "service_name"
+    LOG_MONITOR_LAG_SECONDS: int = 10  # don't read the newest seconds (ingest delay)
+    LOG_MONITOR_START_LOOKBACK_SECONDS: int = 60
+    LOG_MONITOR_NEW_PATTERN_MIN_COUNT: int = 2  # a never-seen error pattern this often per poll
+    LOG_MONITOR_MIN_COUNT: int = 3  # a known pattern must reach this AND spike
+    LOG_MONITOR_Z_THRESHOLD: float = 3.0
+    LOG_MONITOR_RESOLVE_AFTER_SECONDS: int = 300  # quiet this long -> auto-resolve
+    LOG_MONITOR_RECURRING_DAYS: int = 7
+    LOG_MONITOR_EXCLUDE_SERVICES: List[str] = Field(default_factory=list)
+    LOG_MONITOR_INVESTIGATE: bool = True  # run enrich/correlate/RCA/runbook on new incidents
+    LOG_MONITOR_MAX_LINES_PER_RUN: int = 5000
+
     # Alertmanager webhook (POST /alerts/alertmanager): what to run for new alerts
     ALERT_AUTO_INVESTIGATE: bool = True
     ALERT_AUTO_ENRICH: bool = True
@@ -103,6 +119,21 @@ class Settings(BaseSettings):
     )
     NOTIFY_MIN_SEVERITY: SeverityName = "WARN"
     NOTIFY_TIMEOUT_SECONDS: float = 5.0
+    # Email channel (SMTP). Locally: Mailpit (SMTP_HOST=mailpit, SMTP_PORT=1025).
+    SMTP_HOST: str | None = None  # unset = email disabled
+    SMTP_PORT: int = 1025
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_STARTTLS: bool = False
+    SMTP_SSL: bool = False
+    NOTIFY_EMAIL_FROM: str = "incident-bot@localhost"
+    NOTIFY_EMAIL_TO: List[str] = Field(default_factory=list)  # production support team
+    # The full incident report goes out with runbook_completed
+    NOTIFY_EMAIL_EVENTS: List[NotifyEvent] = Field(
+        default_factory=lambda: ["incident_created", "runbook_completed", "incident_resolved"]
+    )
+    # Web UI base URL for "open incident" links in emails, e.g. http://localhost:8080
+    UI_BASE_URL: str | None = None
     # Base URL used for incident links in notifications, e.g. https://ai.example.com
     PUBLIC_BASE_URL: str | None = None
 

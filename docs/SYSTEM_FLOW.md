@@ -39,7 +39,9 @@ flowchart LR
   AI <--> DB[(Postgres incidents)]
   AI -- queries --> P & L & T
   AI -- RCA / runbook --> LLM[AI provider<br/>mock / Gemini / Claude / OpenAI / Ollama]
-  AI -- notify --> N[Slack / webhooks]
+  AI -- notify --> N[Email / Slack / webhooks]
+  ALLOY[Alloy: container + file logs, read-only] --> L
+  AI -- log monitor polls --> L
   UI[web-ui :8080] -- /api --> AI
   G[Grafana :3000] --> P & L & T
   P -- scrapes /metrics --> AI
@@ -65,7 +67,8 @@ flowchart LR
 | **AI provider layer** | Abstraction over models + retries, fallback, cache, cost metrics | Swap models without touching callers; survive outages | RCA, runbook, log analysis, agent planner | Validated Pydantic objects + `GenerationInfo` (provider, tokens, degraded) | `app/providers/` (`factory.get_ai_provider`, `ResilientAIProvider`, mock/gemini/anthropic/openai) |
 | **Investigation agent** | Multi-step investigation over tools | Answer a question about an incident in one call | People, web UI | `AgentInvestigateResponse`, or a server-sent event stream | `POST /api/v1/agent/investigate`, `/investigate/stream` → `app/agent/` |
 | **Log analysis** | One-shot AI triage of pasted log text | Quick, stateless triage | People | `LogAnalysisResponse` (not stored) | `POST /api/v1/logs/analyze` |
-| **Notifier** | Slack and generic-webhook delivery | Tell people without them polling | Incident endpoints, alert ingest/investigation | Slack Block Kit message / JSON POST | `app/services/notifier.py` |
+| **Log monitor** | Polls Loki (read-only) for error patterns; opens, updates and auto-resolves incidents | Detect failures from logs alone, with no app changes | Background loop (`LOG_MONITOR_ENABLED`), `POST /log-monitor/run` | Incidents with `source=log_monitor` | `app/services/log_monitor.py`, `GET /log-monitor/status` |
+| **Notifier** | Email (SMTP), Slack and generic-webhook delivery | Tell people without them polling | Incident endpoints, alert ingest/investigation, log monitor | Email report / Slack Block Kit / JSON POST | `app/services/notifier.py`, `app/services/email_report.py` |
 | **Auth + rate limit** | API keys with scopes; per-client token buckets | Protect the API and AI spend | Every request (middleware) | 401 / 403 / 429 / 503 | `app/core/auth.py`, `app/core/rate_limit.py` |
 | **E2E endpoint** | Synthetic self-test of the pipeline | Smoke-test a deployment | People, `scripts/validate_mvp.sh` | `E2EResponse` (step results) | `POST /api/v1/e2e/run` |
 | **Web UI** | Static app behind nginx | Day-to-day view of incidents | Browsers | HTML; proxies `/api` to ai-service | `services/web-ui/`, http://localhost:8080 |
@@ -139,12 +142,13 @@ when `ENABLE_AUTH=true`.
 | `POST /e2e/run` | Smoke tests | `ai` | No |
 | `GET /observability/{health,metrics,logs,traces,traces/{id}}` | People | `read` | — |
 | `POST /telemetry/{logs,metrics,traces}` | — | `write` | **Echo only**: validates and returns the payload, stores nothing |
+| `GET /log-monitor/status`, `POST /log-monitor/run` | People, demo script | `read` / `ai` | the poll's incidents notify as below |
 | `GET /health`, `/health/ready`, `/metrics` (no prefix) | Probes, Prometheus | public | — |
 
-**Log ingest (`/api/v1/ingest/logs`): Not in this codebase.** Logs reach the
-system only through the OTel Collector into Loki, where enrichment reads them,
-or inside a `POST /incidents/context` body. Nothing turns a stream of logs
-into incidents by itself; detection is done by Prometheus alert rules.
+**Log ingest endpoint (`/api/v1/ingest/logs`): Not in this codebase.** Logs
+enter through Loki instead: Alloy (container stdout via a GET-only Docker
+proxy, and `*.log` files) or the OTel Collector push into Loki, and the
+**log monitor** reads Loki (path C2).
 
 ---
 
@@ -220,11 +224,20 @@ The AI-service's own alerts (`AIProviderFallbackActive`,
 `AIProviderErrorRateHigh`) carry `ai_investigate: "false"`, so an AI outage
 opens an incident without spending more AI calls.
 
-### C2. Log path: Not in this codebase
+### C2. Log path: Implemented (read-only, via Loki)
 
-There is no log-ingest endpoint and no log-pattern detector. Logs are used as
-evidence, through enrichment from Loki or evidence pushed via
-`POST /incidents/context`, but they never create incidents on their own.
+The log monitor (`app/services/log_monitor.py`) polls `LOG_MONITOR_QUERY`
+every `LOG_MONITOR_INTERVAL_SECONDS`:
+1. keeps failure lines and turns them into patterns
+2. opens an incident for a **new** or **spiking** pattern, grouped by
+   service + error class (HTTP 5xx lines join the cause's incident)
+3. sends `incident_created` and runs the same `investigate()` pipeline as
+   alerts
+4. resolves the incident after `LOG_MONITOR_RESOLVE_AFTER_SECONDS` without
+   matching errors, sending `incident_resolved`
+
+A group that had incidents within `LOG_MONITOR_RECURRING_DAYS` is flagged
+recurring. See [POC_GUIDE.md](POC_GUIDE.md).
 
 ### C3. Manual API / UI path: Implemented
 
@@ -447,7 +460,7 @@ system runs end to end with **no AI key**, but its "analysis" isn't real.
   - Evidence timeline
   - Analysis: anomalies, baseline table, similar incidents
   - AI agent with live steps
-- **Slack / webhooks:** the four events above.
+- **Email / Slack / webhooks:** the four events above; email sends the full report with `runbook_completed`.
 - **REST API:** full objects (sections 4–7); OpenAPI at `/docs`.
 - **Grafana (http://localhost:3000)**, dashboard *AI Incident Insights*:
   - order/payment rates and latency
@@ -475,6 +488,7 @@ For the alert-driven flow with the bundled stack:
    - the matching key: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` or
      `OPENAI_API_KEY` (Ollama needs `OLLAMA_BASE_URL`)
 3. **Notifications** (otherwise none are sent):
+   - email: `SMTP_HOST`, `SMTP_PORT` (+ credentials/TLS), `NOTIFY_EMAIL_TO`, `NOTIFY_EMAIL_EVENTS`, `UI_BASE_URL`
    - `NOTIFY_SLACK_WEBHOOK_URL` and/or `NOTIFY_WEBHOOK_URLS`
    - optional: `NOTIFY_WEBHOOK_SECRET`, `NOTIFY_MIN_SEVERITY` (default `WARN`),
      `NOTIFY_EVENTS`, `PUBLIC_BASE_URL`
@@ -501,8 +515,9 @@ Using your own Prometheus, Loki and Alertmanager instead: set `PROMETHEUS_URL`,
   bundled rules are written for the demo services, so each new service needs
   its own. There are no rules built from the standard OTel HTTP metrics
   (5xx ratio, latency).
-- **No log-based detection** and no `/ingest/logs` endpoint; logs are
-  evidence only.
+- **Log-based detection is single-host and simple:** pattern history is in
+  memory, grouping is rule-based (not a clustering algorithm), and there's
+  no push ingest endpoint; logs must reach Loki.
 - **`/telemetry/*` endpoints are echo-only:** they store nothing and forward
   nothing.
 - **Some checks assume demo naming:**

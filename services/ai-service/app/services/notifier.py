@@ -5,8 +5,11 @@ Targets (any combination):
 - NOTIFY_SLACK_WEBHOOK_URL  Slack incoming webhook (Block Kit message)
 - NOTIFY_WEBHOOK_URLS       generic JSON POST; if NOTIFY_WEBHOOK_SECRET is set,
                             the body is signed: X-Signature-SHA256: sha256=<hex hmac>
+- SMTP_HOST + NOTIFY_EMAIL_TO  email to the support team (app.services.email_report);
+                            events chosen separately by NOTIFY_EMAIL_EVENTS
 
-Filtered by NOTIFY_EVENTS and NOTIFY_MIN_SEVERITY. Delivery failures are
+Slack/webhooks are filtered by NOTIFY_EVENTS, email by NOTIFY_EMAIL_EVENTS,
+all by NOTIFY_MIN_SEVERITY. Delivery failures are
 logged and counted, never raised: a notification must not fail the request
 or investigation that triggered it. Callers run notify() in the background.
 """
@@ -49,12 +52,23 @@ def _incident_url(settings: Settings, incident_id: str) -> Optional[str]:
     return f"{settings.PUBLIC_BASE_URL.rstrip('/')}{settings.API_V1_PREFIX}/incidents/{incident_id}"
 
 
+def _severity_ok(settings: Settings, incident: IncidentContext) -> bool:
+    return _SEV_RANK[incident.severity] >= _SEV_RANK[SeverityLevel(settings.NOTIFY_MIN_SEVERITY)]
+
+
 def should_notify(settings: Settings, event: str, incident: IncidentContext) -> bool:
+    """Slack / generic webhooks."""
     if not (settings.NOTIFY_SLACK_WEBHOOK_URL or settings.NOTIFY_WEBHOOK_URLS):
         return False
     if event not in settings.NOTIFY_EVENTS:
         return False
-    return _SEV_RANK[incident.severity] >= _SEV_RANK[SeverityLevel(settings.NOTIFY_MIN_SEVERITY)]
+    return _severity_ok(settings, incident)
+
+
+def should_email(settings: Settings, event: str, incident: IncidentContext) -> bool:
+    if not (settings.SMTP_HOST and settings.NOTIFY_EMAIL_TO):
+        return False
+    return event in settings.NOTIFY_EMAIL_EVENTS and _severity_ok(settings, incident)
 
 
 def build_payload(event: str, incident: IncidentContext, details: Dict[str, Any], settings: Settings) -> Dict[str, Any]:
@@ -132,6 +146,8 @@ async def notify(
     settings: Optional[Settings] = None,
 ) -> None:
     settings = settings or get_settings()
+    if should_email(settings, event, incident):
+        await _email(event, incident, details or {}, settings)
     if not should_notify(settings, event, incident):
         return
     payload = build_payload(event, incident, details or {}, settings)
@@ -149,6 +165,22 @@ async def notify(
             hook_headers["X-Signature-SHA256"] = sign(body, settings.NOTIFY_WEBHOOK_SECRET)
         for url in settings.NOTIFY_WEBHOOK_URLS:
             await _post("webhook", url, body, hook_headers, timeout)
+
+
+async def _email(event: str, incident: IncidentContext, details: Dict[str, Any], settings: Settings) -> None:
+    from starlette.concurrency import run_in_threadpool
+
+    from app.services.email_report import build_email, send_email
+
+    try:
+        msg = build_email(event, incident, details, settings)
+        await run_in_threadpool(send_email, msg, settings)
+        _count("email", "success")
+        logger.info("Emailed %s for incident %s to %d recipient(s)", event, incident.incident_id,
+                    len(settings.NOTIFY_EMAIL_TO))
+    except Exception as exc:
+        logger.warning("Email notification failed for %s: %s", incident.incident_id, exc)
+        _count("email", "error")
 
 
 def rca_details(rca_response) -> Dict[str, Any]:

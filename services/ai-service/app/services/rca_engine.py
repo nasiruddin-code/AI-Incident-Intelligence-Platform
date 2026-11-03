@@ -204,6 +204,14 @@ class RCAEngine:
                 "rca_provider": info.provider,
                 "rca_degraded": info.degraded,
                 "rca_prompt": RCA_PROMPT.name,
+                # Full analysis, for reports (excluded from the next RCA prompt by prefix)
+                "rca_summary": result.summary,
+                "rca_hypotheses": [
+                    {"cause": h.cause, "confidence": h.confidence, "component": h.affected_component}
+                    for h in result.hypotheses
+                ],
+                "rca_contributing_factors": list(result.contributing_factors),
+                "rca_next_steps": list(result.recommended_next_steps),
             }
             if result.summary:
                 note_line = f"[RCA] {result.summary}"

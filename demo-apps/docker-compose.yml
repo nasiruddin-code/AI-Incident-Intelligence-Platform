@@ -1,0 +1,28 @@
+# Independent demo applications, deliberately NOT part of the platform's
+# compose project or network. The platform still sees their logs, because
+# Alloy reads container logs from the Docker host (read-only), and files in
+# demo-apps/logs/ (mounted read-only into Alloy).
+#
+#   docker compose -f demo-apps/docker-compose.yml up -d --build
+name: demo-apps
+
+services:
+  catalog-service:
+    build: ./catalog-service
+    ports:
+      - "8090:8090"
+    restart: unless-stopped
+
+  # Steady background traffic so there is a "normal" to compare against
+  traffic:
+    image: curlimages/curl:8.10.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          curl -s -o /dev/null http://catalog-service:8090/products
+          sleep 1
+        done
+    depends_on:
+      - catalog-service
+    restart: unless-stopped

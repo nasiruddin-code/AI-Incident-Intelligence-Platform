@@ -13,6 +13,7 @@ from app.core.logging import RequestIDMiddleware, configure_logging, get_logger
 from app.core.telemetry import instrument_app, setup_telemetry, shutdown_telemetry
 from app.db.session import init_db
 from app.integrations.http import close_http_client
+from app.services.log_monitor import get_monitor
 from app.services.incident_store import ConcurrentModificationError
 
 logger = get_logger(__name__)
@@ -42,7 +43,10 @@ def _make_lifespan(settings: Settings):
         )
         if settings.ENVIRONMENT == "production" and not settings.ENABLE_AUTH:
             logger.warning("ENVIRONMENT=production with ENABLE_AUTH=false: the API is unauthenticated")
+        if settings.LOG_MONITOR_ENABLED:
+            get_monitor().start()
         yield
+        await get_monitor().stop()
         await close_http_client()
         shutdown_telemetry()
         logger.info("Shutting down %s", settings.APP_NAME)

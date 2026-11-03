@@ -82,6 +82,13 @@ class RunbookEngine:
                 "runbook_degraded": info.degraded,
                 "runbook_prompt": RUNBOOK_PROMPT.name,
                 "remediation_count": len(result.remediation_actions),
+                # Full runbook, for reports (excluded from the RCA prompt by prefix)
+                "runbook_summary": result.summary,
+                "runbook_steps": [s.model_dump() for s in result.steps],
+                "runbook_remediation": [a.model_dump() for a in result.remediation_actions],
+                "runbook_verification": list(result.verification_checks),
+                "runbook_escalation": result.escalation_guidance,
+                "runbook_estimated_minutes": result.estimated_time_minutes,
             }
 
         # Applied to a fresh copy: changes made during the model call are kept.

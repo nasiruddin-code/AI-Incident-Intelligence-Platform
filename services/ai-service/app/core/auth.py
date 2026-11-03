@@ -39,7 +39,7 @@ PUBLIC_PATHS = {
     "/redoc",
 }
 
-AI_PATH = re.compile(r"^/api/v1/(logs/analyze|agent/|e2e/|incidents/[^/]+/(rca|runbook)$)")
+AI_PATH = re.compile(r"^/api/v1/(logs/analyze|agent/|e2e/|log-monitor/run$|incidents/[^/]+/(rca|runbook)$)")
 
 
 def is_public(path: str) -> bool:

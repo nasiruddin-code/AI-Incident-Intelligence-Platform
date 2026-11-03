@@ -92,6 +92,7 @@ curl -X POST http://localhost:8001/api/v1/orders \
 | Order Service    | http://localhost:8001/docs |
 | Payment Service  | http://localhost:8002/docs |
 | Grafana          | http://localhost:3000 (admin/admin) |
+| Mailpit (test inbox) | http://localhost:8025 |
 | Prometheus       | http://localhost:9090 |
 | Alertmanager     | http://localhost:9093 (routes alerts to ai-service → incidents) |
 | Loki             | http://localhost:3100 |
@@ -104,6 +105,7 @@ See individual service READMEs and `observability/README.md` for details.
 
 | Doc | Purpose |
 |-----|---------|
+| [docs/POC_GUIDE.md](docs/POC_GUIDE.md) | **Local POC**: read-only log monitoring of any container/log file → AI incident report → email to a local test inbox |
 | [docs/SYSTEM_FLOW.md](docs/SYSTEM_FLOW.md) | **End-to-end flow**: startup, entry points, alert → incident → investigation → notify → resolve |
 | [DEMO.md](DEMO.md) | Step-by-step demo script |
 | [postman/](postman/) | Postman collection + usage guide |

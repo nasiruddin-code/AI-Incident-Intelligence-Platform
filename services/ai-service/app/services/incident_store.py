@@ -617,6 +617,36 @@ def list_summaries(
     return _mem_list_summaries(status, severity, limit, offset)
 
 
+def _pg_list_by_metadata(key: str, value: str, open_only: bool, limit: int) -> List[IncidentContext]:
+    from app.db.models import IncidentRow
+    from app.db.session import get_session
+
+    session = get_session()
+    try:
+        q = session.query(IncidentRow.incident_id, IncidentRow.payload, IncidentRow.version).filter(
+            IncidentRow.payload[("metadata", key)].as_string() == value
+        )
+        if open_only:
+            q = q.filter(IncidentRow.status.in_([s.value for s in OPEN_STATUSES]))
+        rows = q.order_by(IncidentRow.updated_at.desc()).limit(limit).all()
+        return _pg_list_rows(session, rows)
+    finally:
+        session.close()
+
+
+def list_by_metadata(
+    key: str, value: str, *, open_only: bool = False, limit: int = 100
+) -> List[IncidentContext]:
+    """Incidents whose metadata[key] == value, most recently updated first."""
+    if _use_db():
+        return _pg_list_by_metadata(key, value, open_only, limit)
+    return [
+        i.model_copy(deep=True)
+        for i in _mem_filtered(None, None)
+        if i.metadata.get(key) == value and (not open_only or i.status in OPEN_STATUSES)
+    ][:limit]
+
+
 def find_open_by_metadata(key: str, value: str) -> Optional[IncidentContext]:
     """Most recently updated OPEN/INVESTIGATING incident whose metadata[key] == value."""
     if _use_db():

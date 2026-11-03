@@ -33,11 +33,23 @@ services:
       - LOKI_URL=http://loki:3100
       - TEMPO_URL=http://tempo:3200
       - DATABASE_URL=postgresql+psycopg2://ai:ai@postgres:5432/ai_incidents
+      # Log monitor: read-only polling of Loki for error patterns (POC defaults)
+      - LOG_MONITOR_ENABLED=${LOG_MONITOR_ENABLED:-true}
+      - LOG_MONITOR_INTERVAL_SECONDS=${LOG_MONITOR_INTERVAL_SECONDS:-20}
+      - LOG_MONITOR_RESOLVE_AFTER_SECONDS=${LOG_MONITOR_RESOLVE_AFTER_SECONDS:-180}
+      # Email to the local test inbox (Mailpit, http://localhost:8025)
+      - SMTP_HOST=mailpit
+      - SMTP_PORT=1025
+      - NOTIFY_EMAIL_FROM=incident-bot@demo.local
+      - NOTIFY_EMAIL_TO=${NOTIFY_EMAIL_TO:-["prod-support@demo.local"]}
+      - UI_BASE_URL=http://localhost:8080
     networks:
       - observability-net
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
       otel-collector:
         condition: service_started
 
@@ -86,6 +98,53 @@ services:
       - "9093:9093"
     networks:
       - observability-net
+    restart: unless-stopped
+
+  # --- Local POC: free test inbox + read-only log collection ---------------
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    ports:
+      - "8025:8025"   # web inbox
+      - "1025:1025"   # SMTP
+    networks:
+      - observability-net
+    restart: unless-stopped
+
+  # Docker API proxy that only allows GET requests (container list, inspect,
+  # logs). Alloy never sees the raw socket, so it cannot start, stop or exec.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    environment:
+      - CONTAINERS=1
+      - NETWORKS=1   # discovery reads network labels (GET only)
+      - POST=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - observability-net
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.5.1
+    environment:
+      # Regex of compose projects to watch; ".*" = every container on this host
+      - LOGMON_WATCH_PROJECTS=${LOGMON_WATCH_PROJECTS:-.*}
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ./demo-apps/logs:/var/log/watched:ro
+      - alloy-data:/var/lib/alloy/data
+    ports:
+      - "12345:12345"   # Alloy UI: pipeline status
+    networks:
+      - observability-net
+    depends_on:
+      - docker-proxy
+      - loki
     restart: unless-stopped
 
   loki:
@@ -191,6 +250,7 @@ networks:
     driver: bridge
 
 volumes:
+  alloy-data:
   postgres-data:
   prometheus-data:
   loki-data:
