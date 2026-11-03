@@ -235,8 +235,21 @@ function renderDetail() {
 
 function renderOverview(inc) {
   const m = inc.metadata || {};
-  const rcaFull = state.results.rca;
-  const rbFull = state.results.runbook;
+  // Full results: from an action run in this session, else as stored on the incident
+  const rcaFull = state.results.rca || (m.rca_summary ? {
+    rca: {
+      summary: m.rca_summary,
+      hypotheses: (m.rca_hypotheses || []).map((x) => ({ cause: x.cause, confidence: x.confidence, affected_component: x.component })),
+      recommended_next_steps: m.rca_next_steps || [],
+    },
+  } : null);
+  const rbFull = state.results.runbook || (m.runbook_steps ? {
+    runbook: {
+      title: m.runbook_title, summary: m.runbook_summary || "", steps: m.runbook_steps,
+      verification_checks: m.runbook_verification || [], escalation_guidance: m.runbook_escalation,
+    },
+    degraded: m.runbook_degraded || m.runbook_provider === "mock",
+  } : null);
 
   const evidence = card("Evidence",
     h("div", { class: "stats" },
@@ -315,7 +328,7 @@ function runbookDetails(r) {
       ? h("div", {}, h("h4", { text: "Verify" }), h("ul", {}, rb.verification_checks.map((c) => h("li", { text: c }))))
       : null,
     rb.escalation_guidance ? h("p", { class: "muted small", text: `Escalation: ${rb.escalation_guidance}` }) : null,
-    r.degraded ? h("p", { class: "warn-text", text: "Produced by the fallback provider — placeholder text." }) : null);
+    r.degraded ? h("p", { class: "warn-text", text: "Placeholder text from the mock or fallback AI provider, not a real analysis." }) : null);
 }
 
 // ---------------------------------------------------------------- evidence

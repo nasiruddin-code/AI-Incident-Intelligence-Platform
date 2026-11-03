@@ -105,6 +105,7 @@ See individual service READMEs and `observability/README.md` for details.
 
 | Doc | Purpose |
 |-----|---------|
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | **Start here.** Install, connect your apps, configure email and AI, tutorial with real outputs, troubleshooting |
 | [docs/POC_GUIDE.md](docs/POC_GUIDE.md) | **Local POC**: read-only log monitoring of any container/log file → AI incident report → email to a local test inbox |
 | [docs/SYSTEM_FLOW.md](docs/SYSTEM_FLOW.md) | **End-to-end flow**: startup, entry points, alert → incident → investigation → notify → resolve |
 | [DEMO.md](DEMO.md) | Step-by-step demo script |

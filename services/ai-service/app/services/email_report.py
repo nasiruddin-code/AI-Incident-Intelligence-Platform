@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 from app.core.config import Settings
 from app.schemas.incident import IncidentContext
 from app.schemas.telemetry import SeverityLevel
+from app.services.similarity import log_template
 
 SUBJECTS = {
     "incident_created": "New incident",
@@ -78,7 +79,7 @@ def _evidence_lines(incident: IncidentContext, limit: int = 5) -> List[str]:
     logs.sort(key=lambda log: (rank[log.severity], log.timestamp))
     seen, out = set(), []
     for log in logs:
-        key = log.body[:120]
+        key = (log.resource.service_name, log_template(log.body))  # one line per error pattern
         if key in seen:
             continue
         seen.add(key)

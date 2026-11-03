@@ -1,5 +1,7 @@
 # Local POC guide: AI log monitoring and incident reports
 
+> New to the project? Start with the **[User Guide](USER_GUIDE.md)**: install, tutorial, configuration, troubleshooting. This page explains how the POC is built.
+
 This runs the whole product on one machine:
 
 1. Collect logs, **read-only**, from our own services *and* from applications

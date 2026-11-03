@@ -106,3 +106,16 @@ def test_send_email_uses_smtp(monkeypatch):
     email_report.send_email(build_email("incident_created", _incident(), {}, settings), settings)
     assert [c[0] for c in calls] == ["connect", "starttls", "login", "send"]
     assert calls[0] == ("connect", "mailpit", 1025)
+
+
+def test_evidence_shows_one_line_per_pattern():
+    incident = _incident(runbook_provider="anthropic", rca_primary_cause="x")
+    incident.logs = [
+        LogRecord(timestamp=NOW, severity=SeverityLevel.ERROR, body=f"redis error connecting to cache:6379 (sku=SKU-{i})",
+                  resource=Resource(service_name="inventory"))
+        for i in range(5)
+    ] + [LogRecord(timestamp=NOW, severity=SeverityLevel.WARN, body="GET /stock status=503 4ms",
+                   resource=Resource(service_name="inventory"))]
+    text = build_email("runbook_completed", incident, {}, _settings()).get_body(("plain",)).get_content()
+    evidence = text.split("KEY EVIDENCE", 1)[1].split("\n\n")[0]
+    assert evidence.count("redis error") == 1 and "status=503" in evidence

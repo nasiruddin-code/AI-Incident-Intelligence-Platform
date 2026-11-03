@@ -54,6 +54,8 @@ test("API errors get actionable messages", () => {
   assert.match(describeError(409), /retry/);
   assert.equal(describeError(500, "boom"), "Request failed (500): boom");
   assert.equal(describeError(0, "Failed to fetch"), "Request failed (network error): Failed to fetch");
+  assert.match(describeError(502, "<html><body>502 Bad Gateway</body></html>"), /not reachable/);
+  assert.doesNotMatch(describeError(500, "<html>boom</html>"), /html/);
 });
 
 test("metric attributes drop scrape/process labels", () => {

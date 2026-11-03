@@ -164,6 +164,10 @@ def is_failure(parsed: ParsedLine) -> bool:
 
 
 def classify(message: str) -> str:
+    # An access line reporting a 5xx response is a symptom, whatever else it says
+    # ("GET /stock status=503" must not count as a dependency error of its own).
+    if _HTTP_5XX.search(message):
+        return "http_5xx"
     for name, _, pattern in ERROR_CLASSES:
         if pattern.search(message):
             return name

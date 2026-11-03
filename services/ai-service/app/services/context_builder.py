@@ -122,9 +122,13 @@ def build_context(req: BuildContextRequest) -> IncidentContext:
             existing.affected_services, existing.logs, existing.metrics, existing.traces
         )
         existing.severity = _derive_severity(existing.logs, existing.traces, existing.severity)
-        existing.time_window = _derive_time_window(
-            existing.time_window, existing.logs, existing.metrics, existing.traces
-        )
+        # Widen (never shrink) the window to cover the merged evidence
+        if logs or metrics or traces:
+            evidence_window = _derive_time_window(None, logs, metrics, traces)
+            existing.time_window = TimeWindow(
+                start=min(existing.time_window.start, evidence_window.start),
+                end=max(existing.time_window.end, evidence_window.end),
+            )
         existing.evidence_summary = _evidence_summary(
             existing.logs, existing.metrics, existing.traces, existing.affected_services
         )

@@ -84,6 +84,8 @@ def test_parse_plain_text_levels_and_failure_rules():
     ("java.lang.OutOfMemoryError: Java heap space", "resource"),
     ("connect ECONNREFUSED inventory:8080", "dependency"),
     ('"GET /x HTTP/1.1" 500', "http_5xx"),
+    ("GET /stock status=503 4ms", "http_5xx"),  # response status beats the bare-503 dependency rule
+    ("upstream service returned 503", "dependency"),
     ("Something odd happened: error 42", "application_error"),
 ])
 def test_classify(message, expected):
@@ -198,3 +200,13 @@ async def test_http_5xx_symptoms_join_the_cause_incident():
     await _poll(monitor, [("catalog-service", access.format(9), 2)] * 3)
     [incident] = incident_store.list_by_metadata("source", "log_monitor")
     assert incident.metadata["log_monitor"]["error_count"] == 9
+
+
+@pytest.mark.asyncio
+async def test_incident_time_window_grows_with_new_evidence():
+    monitor = LogMonitor(_settings(LOG_MONITOR_INVESTIGATE=False, NOTIFY_EMAIL_TO=[]))
+    await _poll(monitor, [("catalog-service", DB_ERR.format(i), 90) for i in range(3)])
+    await _poll(monitor, [("catalog-service", DB_ERR.format(i), 5) for i in range(3)])
+    [incident] = incident_store.list_by_metadata("source", "log_monitor")
+    span = (incident.time_window.end - incident.time_window.start).total_seconds()
+    assert 80 <= span <= 90

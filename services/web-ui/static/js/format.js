@@ -110,7 +110,12 @@ export function describeError(status, detail) {
     403: "Your API key does not allow this action.",
     409: "The incident changed at the same time — please retry.",
     429: "Rate limit reached — wait a moment and retry.",
+    502: "ai-service is not reachable (it may be restarting) — retry in a few seconds.",
+    503: "ai-service is unavailable — retry in a few seconds.",
+    504: "ai-service took too long to answer — retry, or check its logs.",
   };
+  // Proxy error pages are HTML: never show their markup as the message
+  if (typeof detail === "string" && /^\s*</.test(detail)) detail = "";
   const base = hints[status] || `Request failed (${status || "network error"})`;
   return detail && !hints[status] ? `${base}: ${detail}` : base;
 }
