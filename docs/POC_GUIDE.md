@@ -298,9 +298,22 @@ with `level`/`message`), and a request or trace ID. JSON logs are parsed
 | `NOTIFY_EMAIL_TO` / `NOTIFY_EMAIL_EVENTS` | support inbox / created, report, resolved | who gets which emails |
 | `NOTIFY_MIN_SEVERITY` | WARN | minimum incident severity that is notified |
 
-**Moving to a real mail server later:** set `SMTP_HOST`, `SMTP_PORT=587`,
-`SMTP_STARTTLS=true`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `NOTIFY_EMAIL_FROM`.
-No code change.
+**Sending reports to your own email address.** Copy `.env.example` (repo root)
+to `.env` and set the recipients. For delivery to a real inbox, also set a
+real SMTP server; Mailpit only catches mail locally:
+
+```bash
+NOTIFY_EMAIL_TO=["you@example.com","team@example.com"]
+SMTP_HOST=smtp.gmail.com        # Gmail: needs 2-Step Verification + an App Password
+SMTP_PORT=587
+SMTP_STARTTLS=true
+SMTP_USERNAME=you@gmail.com
+SMTP_PASSWORD=<16-character app password>
+NOTIFY_EMAIL_FROM=you@gmail.com
+```
+
+Then `docker compose up -d ai-service`. No code change; `.env` is
+git-ignored.
 
 ---
 
