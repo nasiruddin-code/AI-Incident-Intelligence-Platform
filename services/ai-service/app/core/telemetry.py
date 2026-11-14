@@ -1,18 +1,25 @@
-"""OpenTelemetry setup for payment-service (Week 7).
+"""OpenTelemetry setup (Week 7), shared by every service in this repo.
 
-Exports traces and metrics to the OTel Collector via OTLP/HTTP.
+Exports traces, metrics and logs to the OTel Collector via OTLP/HTTP
+(logs: stdlib logging records at LOG_LEVEL and above, with trace context,
+which the collector forwards to Loki).
 Also instruments FastAPI and outbound HTTP clients (httpx).
 """
 from __future__ import annotations
 
+import logging
 import os
 
 from opentelemetry import metrics, trace
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
@@ -25,6 +32,8 @@ logger = get_logger(__name__)
 
 _tracer_provider: TracerProvider | None = None
 _meter_provider: MeterProvider | None = None
+_logger_provider: LoggerProvider | None = None
+_log_handler: LoggingHandler | None = None
 _instrumented = False
 
 
@@ -39,7 +48,7 @@ def setup_telemetry(
     Safe to call when otlp_endpoint is None — instrumentation is skipped
     so local unit tests and offline runs keep working.
     """
-    global _tracer_provider, _meter_provider
+    global _tracer_provider, _meter_provider, _logger_provider, _log_handler
 
     if not otlp_endpoint:
         logger.info("OTEL_EXPORTER_OTLP_ENDPOINT not set — telemetry disabled")
@@ -57,6 +66,7 @@ def setup_telemetry(
             break
     traces_endpoint = f"{endpoint}/v1/traces"
     metrics_endpoint = f"{endpoint}/v1/metrics"
+    logs_endpoint = f"{endpoint}/v1/logs"
 
     resource = Resource.create(
         {
@@ -79,15 +89,27 @@ def setup_telemetry(
     _meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
     metrics.set_meter_provider(_meter_provider)
 
+    # --- Logs: forward stdlib logging records to the collector (-> Loki) ---
+    _logger_provider = LoggerProvider(resource=resource)
+    _logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter(endpoint=logs_endpoint))
+    )
+    set_logger_provider(_logger_provider)
+    _log_handler = LoggingHandler(logger_provider=_logger_provider)
+    logging.getLogger().addHandler(_log_handler)
+
     # --- Auto-instrumentation (httpx + logging; FastAPI done in instrument_app) -
     HTTPXClientInstrumentor().instrument()
-    LoggingInstrumentor().instrument(set_logging_format=True)
+    # Trace-context fields only: newer versions would also attach their own OTel
+    # log handler (older ones ignore the flag), duplicating the handler above.
+    LoggingInstrumentor().instrument(set_logging_format=True, enable_log_auto_instrumentation=False)
 
     logger.info(
-        "OpenTelemetry initialised service=%s traces=%s metrics=%s",
+        "OpenTelemetry initialised service=%s traces=%s metrics=%s logs=%s",
         service_name,
         traces_endpoint,
         metrics_endpoint,
+        logs_endpoint,
     )
 
 
@@ -113,7 +135,13 @@ def get_meter(name: str = __name__):
 
 
 def shutdown_telemetry() -> None:
-    global _tracer_provider, _meter_provider, _instrumented
+    global _tracer_provider, _meter_provider, _logger_provider, _log_handler, _instrumented
+    if _log_handler:
+        logging.getLogger().removeHandler(_log_handler)
+        _log_handler = None
+    if _logger_provider:
+        _logger_provider.shutdown()
+        _logger_provider = None
     if _tracer_provider:
         _tracer_provider.shutdown()
         _tracer_provider = None

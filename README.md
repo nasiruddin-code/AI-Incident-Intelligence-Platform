@@ -87,11 +87,14 @@ curl -X POST http://localhost:8001/api/v1/orders \
 
 | Service          | URL / Port              |
 |------------------|-------------------------|
+| **Web UI**       | http://localhost:8080 — incidents, evidence, analysis, live AI agent |
 | AI Service       | http://localhost:8000/docs |
 | Order Service    | http://localhost:8001/docs |
 | Payment Service  | http://localhost:8002/docs |
 | Grafana          | http://localhost:3000 (admin/admin) |
+| Mailpit (test inbox) | http://localhost:8025 |
 | Prometheus       | http://localhost:9090 |
+| Alertmanager     | http://localhost:9093 (routes alerts to ai-service → incidents) |
 | Loki             | http://localhost:3100 |
 | Tempo            | http://localhost:3200 |
 
@@ -102,11 +105,25 @@ See individual service READMEs and `observability/README.md` for details.
 
 | Doc | Purpose |
 |-----|---------|
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | **Start here.** Install, connect your apps, configure email and AI, tutorial with real outputs, troubleshooting |
+| [docs/POC_GUIDE.md](docs/POC_GUIDE.md) | **Local POC**: read-only log monitoring of any container/log file → AI incident report → email to a local test inbox |
+| [docs/SYSTEM_FLOW.md](docs/SYSTEM_FLOW.md) | **End-to-end flow**: startup, entry points, alert → incident → investigation → notify → resolve |
 | [DEMO.md](DEMO.md) | Step-by-step demo script |
 | [postman/](postman/) | Postman collection + usage guide |
 | [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) | Checklist + production gaps |
 | [ROADMAP_STATUS.md](ROADMAP_STATUS.md) | Full 16-week status |
 | [observability/README.md](observability/README.md) | Stack runbook |
+
+## CI
+
+`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests:
+
+- **test** — per service: install, lint (syntax errors / undefined names), pytest
+- **observability-config** — `promtool` (Prometheus config + alert rules),
+  `amtool` (Alertmanager), dashboard JSON, `docker compose config`
+- **docker-build** — builds all three images
+- **evals** — manual only (*Run workflow* → `run_evals`): runs the golden-incident
+  evals against Claude using the `ANTHROPIC_API_KEY` repository secret (billed)
 
 ## Validate MVP
 
@@ -128,3 +145,11 @@ Incidents are stored in **PostgreSQL** when `DATABASE_URL` is set (Compose defau
 
 # Without DB (tests / minimal local): leave DATABASE_URL empty → in-memory
 ```
+
+**Schema migrations** (Alembic, `services/ai-service/app/db/migrations/`) run
+automatically when ai-service starts; databases created before migrations
+existed are detected and upgraded in place. Evidence (logs / metrics / spans)
+is stored one row per item in `incident_evidence`; incidents carry a `version`
+used for optimistic locking, so concurrent updates (API, background
+investigations, alerts) are never silently overwritten. See the ai-service
+README for creating new migrations.

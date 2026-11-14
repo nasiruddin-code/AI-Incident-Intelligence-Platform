@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Incident Intelligence</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23d9480f'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot" aria-hidden="true"></span>
+      <h1>Incident Intelligence</h1>
+    </div>
+    <span id="health" class="pill" role="status" aria-live="polite">checking…</span>
+    <div class="topbar-actions">
+      <button id="new-btn" type="button" class="btn btn-primary">New incident</button>
+      <button id="settings-btn" type="button" class="btn" aria-label="Settings">Settings</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar" aria-label="Incidents">
+      <div class="sidebar-head">
+        <div class="filters">
+          <label>Status
+            <select id="filter-status">
+              <option value="">Any</option>
+              <option>OPEN</option>
+              <option>INVESTIGATING</option>
+              <option>RESOLVED</option>
+              <option>CLOSED</option>
+            </select>
+          </label>
+          <label>Severity
+            <select id="filter-severity">
+              <option value="">Any</option>
+              <option>FATAL</option>
+              <option>ERROR</option>
+              <option>WARN</option>
+              <option>INFO</option>
+            </select>
+          </label>
+          <button id="refresh-btn" type="button" class="btn btn-small" aria-label="Refresh list">Refresh</button>
+        </div>
+        <p class="muted small"><span id="list-count">…</span> incidents · refreshes every 15 s</p>
+      </div>
+      <ul id="incident-list" class="incident-list"></ul>
+    </aside>
+
+    <section id="detail" class="detail" aria-live="polite"></section>
+  </main>
+
+  <dialog id="new-dialog" aria-labelledby="new-title">
+    <div class="dialog-head">
+      <h2 id="new-title">New incident</h2>
+      <button type="button" class="btn btn-small" data-close aria-label="Close">Close</button>
+    </div>
+    <form id="scenario-form" class="stack">
+      <h3>Run a failure scenario</h3>
+      <p class="muted small">Sends orders through order-service with payment failures injected, then opens an incident from what happened.</p>
+      <label>Scenario
+        <select name="scenario">
+          <option value="payment_timeout">Payment gateway timeout (all payments fail)</option>
+          <option value="payment_high_latency">Payment high latency (2 s)</option>
+          <option value="payment_cascade_failure">Cascading failures (60 % fail, 800 ms)</option>
+        </select>
+      </label>
+      <label>Orders <input name="order_count" type="number" min="1" max="50" value="10"></label>
+      <button type="submit" class="btn btn-primary">Run scenario</button>
+    </form>
+    <hr>
+    <form id="blank-form" class="stack">
+      <h3>Or open an empty incident</h3>
+      <label>Title <input name="title" required maxlength="200" placeholder="Checkout is failing"></label>
+      <label>Severity
+        <select name="severity">
+          <option>ERROR</option><option>FATAL</option><option>WARN</option><option>INFO</option>
+        </select>
+      </label>
+      <label>Affected services <input name="services" placeholder="payment-service, order-service"></label>
+      <button type="submit" class="btn">Create</button>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-head">
+      <h2 id="settings-title">Settings</h2>
+      <button type="button" class="btn btn-small" data-close aria-label="Close">Close</button>
+    </div>
+    <form id="settings-form" class="stack">
+      <label>API key
+        <input id="api-key" type="password" autocomplete="off" placeholder="Only needed when ai-service has ENABLE_AUTH=true">
+      </label>
+      <p class="muted small">Stored in this browser only and sent as the <code>X-API-Key</code> header. Leave empty to clear.</p>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+</body>
+</html>

@@ -4,9 +4,11 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
+from starlette.concurrency import run_in_threadpool
 from app.core.logging import get_logger
 from app.prompts.runbook import RUNBOOK_PROMPT
 from app.providers.base import AIProvider
+from app.schemas.common import AIUsage
 from app.schemas.incident import IncidentContext
 from app.schemas.runbook import RunbookResponse, RunbookResult
 from app.services import incident_store
@@ -40,7 +42,7 @@ class RunbookEngine:
         self._provider = provider
 
     async def generate(self, incident_id: str) -> RunbookResponse:
-        incident = incident_store.get(incident_id)
+        incident = await run_in_threadpool(incident_store.get, incident_id)
         if not incident:
             raise KeyError(f"Incident {incident_id} not found")
 
@@ -64,25 +66,39 @@ class RunbookEngine:
             self._provider.name,
         )
 
-        result: RunbookResult = await self._provider.generate_structured(
+        result, info = await self._provider.generate_structured_with_info(
             prompt=prompt,
             response_model=RunbookResult,
             system_instruction=RUNBOOK_PROMPT.system_instruction,
         )
 
         # Persist key fields for agent / dashboard later
-        incident.metadata = {
-            **incident.metadata,
-            "runbook_title": result.title,
-            "runbook_confidence": result.confidence,
-            "runbook_provider": self._provider.name,
-            "remediation_count": len(result.remediation_actions),
-        }
-        incident_store.save(incident)
+        def record(fresh: IncidentContext) -> None:
+            fresh.metadata = {
+                **fresh.metadata,
+                "runbook_title": result.title,
+                "runbook_confidence": result.confidence,
+                "runbook_provider": info.provider,
+                "runbook_degraded": info.degraded,
+                "runbook_prompt": RUNBOOK_PROMPT.name,
+                "remediation_count": len(result.remediation_actions),
+                # Full runbook, for reports (excluded from the RCA prompt by prefix)
+                "runbook_summary": result.summary,
+                "runbook_steps": [s.model_dump() for s in result.steps],
+                "runbook_remediation": [a.model_dump() for a in result.remediation_actions],
+                "runbook_verification": list(result.verification_checks),
+                "runbook_escalation": result.escalation_guidance,
+                "runbook_estimated_minutes": result.estimated_time_minutes,
+            }
+
+        # Applied to a fresh copy: changes made during the model call are kept.
+        incident, _ = await run_in_threadpool(incident_store.update, incident_id, record)
 
         return RunbookResponse(
             incident_id=incident_id,
-            provider=self._provider.name,
+            provider=info.provider,
+            degraded=info.degraded,
+            usage=AIUsage.from_info(info),
             runbook=result,
             rca_primary_cause=(incident.metadata or {}).get("rca_primary_cause"),
         )

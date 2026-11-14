@@ -28,15 +28,32 @@ services:
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=ai-service
+      - LOG_FORMAT=json
       - PROMETHEUS_URL=http://prometheus:9090
       - LOKI_URL=http://loki:3100
       - TEMPO_URL=http://tempo:3200
       - DATABASE_URL=postgresql+psycopg2://ai:ai@postgres:5432/ai_incidents
+      # Log monitor: read-only polling of Loki for error patterns (POC defaults)
+      - LOG_MONITOR_ENABLED=${LOG_MONITOR_ENABLED:-true}
+      - LOG_MONITOR_INTERVAL_SECONDS=${LOG_MONITOR_INTERVAL_SECONDS:-20}
+      - LOG_MONITOR_RESOLVE_AFTER_SECONDS=${LOG_MONITOR_RESOLVE_AFTER_SECONDS:-180}
+      # Email: local test inbox (Mailpit, http://localhost:8025) by default.
+      # To send to a real inbox, set these in a .env file next to this one.
+      - SMTP_HOST=${SMTP_HOST:-mailpit}
+      - SMTP_PORT=${SMTP_PORT:-1025}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_STARTTLS=${SMTP_STARTTLS:-false}
+      - NOTIFY_EMAIL_FROM=${NOTIFY_EMAIL_FROM:-incident-bot@demo.local}
+      - NOTIFY_EMAIL_TO=${NOTIFY_EMAIL_TO:-["prod-support@demo.local"]}
+      - UI_BASE_URL=http://localhost:8080
     networks:
       - observability-net
     depends_on:
       postgres:
         condition: service_healthy
+      mailpit:
+        condition: service_started
       otel-collector:
         condition: service_started
 
@@ -70,8 +87,68 @@ services:
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
+    depends_on:
+      - alertmanager
     networks:
       - observability-net
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    networks:
+      - observability-net
+    restart: unless-stopped
+
+  # --- Local POC: free test inbox + read-only log collection ---------------
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    ports:
+      - "8025:8025"   # web inbox
+      - "1025:1025"   # SMTP
+    networks:
+      - observability-net
+    restart: unless-stopped
+
+  # Docker API proxy that only allows GET requests (container list, inspect,
+  # logs). Alloy never sees the raw socket, so it cannot start, stop or exec.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    environment:
+      - CONTAINERS=1
+      - NETWORKS=1   # discovery reads network labels (GET only)
+      - POST=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - observability-net
+    restart: unless-stopped
+
+  alloy:
+    image: grafana/alloy:v1.5.1
+    environment:
+      # Regex of compose projects to watch; ".*" = every container on this host
+      - LOGMON_WATCH_PROJECTS=${LOGMON_WATCH_PROJECTS:-.*}
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ./demo-apps/logs:/var/log/watched:ro
+      - alloy-data:/var/lib/alloy/data
+    ports:
+      - "12345:12345"   # Alloy UI: pipeline status
+    networks:
+      - observability-net
+    depends_on:
+      - docker-proxy
+      - loki
     restart: unless-stopped
 
   loki:
@@ -123,6 +200,18 @@ services:
       - observability-net
     restart: unless-stopped
 
+  # --- Web UI: incidents, evidence, analysis and live agent (proxies /api) --
+  web-ui:
+    build:
+      context: ./services/web-ui
+    ports:
+      - "8080:8080"
+    networks:
+      - observability-net
+    depends_on:
+      - ai-service
+    restart: unless-stopped
+
   # --- Week 6: Sample microservices -----------------------------------------
   payment-service:
     build:
@@ -134,6 +223,7 @@ services:
     environment:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=payment-service
+      - LOG_FORMAT=json
     networks:
       - observability-net
     depends_on:
@@ -151,6 +241,7 @@ services:
       - PAYMENT_SERVICE_URL=http://payment-service:8002
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_SERVICE_NAME=order-service
+      - LOG_FORMAT=json
     networks:
       - observability-net
     depends_on:
@@ -163,6 +254,8 @@ networks:
     driver: bridge
 
 volumes:
+  alloy-data:
+  postgres-data:
   prometheus-data:
   loki-data:
   tempo-data:

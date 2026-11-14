@@ -1,3 +1,8 @@
+import os
+
+# Environment variables beat .env: keep tests off the real collector.
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = ""
+
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch

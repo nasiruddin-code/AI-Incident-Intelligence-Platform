@@ -26,7 +26,14 @@ class MockAIProvider(AIProvider):
         model_name = response_model.__name__
         lowered = prompt.lower()
 
-        if model_name == "RunbookResult" or "incident response runbook" in lowered:
+        if model_name == "AgentAction":
+            # The mock cannot plan; end immediately (planner treats mock answers as unavailable).
+            fake_payload = {
+                "thought": "Mock provider cannot plan an investigation.",
+                "tool": "finish",
+                "final_answer": "[mock] No AI model available to plan the investigation.",
+            }
+        elif model_name == "RunbookResult" or "incident response runbook" in lowered:
             if "timeout" in lowered or "gateway" in lowered:
                 title = "Payment gateway timeout response"
                 summary = "Orders failing because payment-service cannot reach the gateway."

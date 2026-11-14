@@ -8,6 +8,7 @@ import uuid
 
 from app.prompts.log_analysis import LOG_ANALYSIS_PROMPT
 from app.providers.base import AIProvider
+from app.schemas.common import AIUsage
 from app.schemas.log_analysis import LogAnalysisRequest, LogAnalysisResponse, LogAnalysisResult
 
 
@@ -22,7 +23,7 @@ class LogAnalyzerService:
             context=request.context or "none provided",
         )
 
-        result: LogAnalysisResult = await self._provider.generate_structured(
+        result, info = await self._provider.generate_structured_with_info(
             prompt=prompt,
             response_model=LogAnalysisResult,
             system_instruction=LOG_ANALYSIS_PROMPT.system_instruction,
@@ -30,6 +31,8 @@ class LogAnalyzerService:
 
         return LogAnalysisResponse(
             request_id=str(uuid.uuid4()),
-            provider=self._provider.name,
+            provider=info.provider,
+            degraded=info.degraded,
+            usage=AIUsage.from_info(info),
             analysis=result,
         )

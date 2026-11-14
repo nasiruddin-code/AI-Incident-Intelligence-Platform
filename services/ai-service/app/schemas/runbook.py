@@ -3,6 +3,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.common import AIUsage
+
 
 class RunbookStep(BaseModel):
     """A single step in an incident response runbook."""
@@ -63,6 +65,11 @@ class RunbookResponse(BaseModel):
     """API response wrapper."""
     incident_id: str
     provider: str
+    degraded: bool = Field(
+        False,
+        description="True if the configured AI provider failed and a fallback answered",
+    )
+    usage: Optional[AIUsage] = None
     runbook: RunbookResult
     rca_primary_cause: Optional[str] = Field(
         None,

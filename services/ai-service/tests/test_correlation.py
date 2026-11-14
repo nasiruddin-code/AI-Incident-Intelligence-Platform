@@ -108,6 +108,33 @@ def test_correlate_incident(client):
     assert data["incident"]["severity"] in ("ERROR", "FATAL")
 
 
+def test_correlate_is_idempotent(client):
+    incident_store.clear()
+    r = client.post(
+        "/api/v1/incidents/context",
+        json={
+            "title": "Repeat correlation",
+            "logs": [
+                {
+                    "timestamp": _now(),
+                    "severity": "ERROR",
+                    "body": "Payment FAILED",
+                    "attributes": {},
+                    "resource": _resource("payment-service"),
+                }
+            ],
+        },
+    )
+    iid = r.json()["incident_id"]
+
+    first = client.post(f"/api/v1/incidents/{iid}/correlate").json()
+    second = client.post(f"/api/v1/incidents/{iid}/correlate").json()
+
+    summary = second["incident"]["evidence_summary"]
+    assert summary.count("correlated:") == 1
+    assert summary == first["incident"]["evidence_summary"]
+
+
 def test_correlate_not_found(client):
     incident_store.clear()
     r = client.post("/api/v1/incidents/does-not-exist/correlate")

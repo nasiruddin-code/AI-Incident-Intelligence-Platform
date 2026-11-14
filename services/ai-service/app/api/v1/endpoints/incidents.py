@@ -1,17 +1,27 @@
 """Incident management + scenario endpoints (Week 8)."""
-from fastapi import APIRouter, HTTPException, status
+from typing import Optional
 
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+
+from starlette.concurrency import run_in_threadpool
 from app.core.logging import get_logger
-from app.core.dependencies import RCAEngineDep, RunbookEngineDep
+from app.core.dependencies import RCAEngineDep, RunbookEngineDep, SettingsDep
+from app.services.telemetry_enrichment import TelemetryEnrichmentService
+from app.services.baseline import BaselineAnalyzer
 from app.schemas.rca import RCAResponse
 from app.schemas.runbook import RunbookResponse
 from app.schemas.incident import (
     BuildContextRequest,
+    BaselineResult,
+    SimilarIncidentsResponse,
     CorrelationResult,
+    EnrichmentResult,
+    EnrichRequest,
     IncidentContext,
     IncidentCreate,
     IncidentListResponse,
     IncidentStatus,
+    IncidentSummaryListResponse,
     ScenarioRunRequest,
     ScenarioRunResult,
     TimeWindow,
@@ -21,6 +31,7 @@ from app.services import incident_store
 from app.services.context_builder import build_context
 from app.services.scenario_runner import run_scenario
 from app.services.correlation import correlate_incident
+from app.services.notifier import notify, rca_details, runbook_details
 
 from datetime import datetime, timezone
 import uuid
@@ -35,7 +46,7 @@ logger = get_logger(__name__)
     status_code=status.HTTP_201_CREATED,
     summary="Create an empty incident shell",
 )
-async def create_incident(payload: IncidentCreate) -> IncidentContext:
+def create_incident(payload: IncidentCreate, background: BackgroundTasks) -> IncidentContext:
     now = datetime.now(timezone.utc)
     incident = IncidentContext(
         incident_id=str(uuid.uuid4()),
@@ -50,17 +61,50 @@ async def create_incident(payload: IncidentCreate) -> IncidentContext:
     )
     incident_store.save(incident)
     logger.info("Created incident %s: %s", incident.incident_id, incident.title)
+    background.add_task(notify, "incident_created", incident, {"source": "api"})
     return incident
 
 
-@router.get("", response_model=IncidentListResponse, summary="List all incidents")
-async def list_incidents() -> IncidentListResponse:
-    items = incident_store.list_all()
-    return IncidentListResponse(count=len(items), incidents=items)
+@router.get("", response_model=IncidentListResponse, summary="List incidents (paginated)")
+def list_incidents(
+    status_filter: Optional[IncidentStatus] = Query(None, alias="status"),
+    severity: Optional[SeverityLevel] = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> IncidentListResponse:
+    """Full incidents (including evidence), newest first.
+
+    Prefer GET /incidents/summaries for dashboards and lists.
+    """
+    items, total = incident_store.list_page(
+        status=status_filter, severity=severity, limit=limit, offset=offset
+    )
+    return IncidentListResponse(
+        count=len(items), total=total, limit=limit, offset=offset, incidents=items
+    )
+
+
+@router.get(
+    "/summaries",
+    response_model=IncidentSummaryListResponse,
+    summary="List incident summaries (no evidence, paginated)",
+)
+def list_incident_summaries(
+    status_filter: Optional[IncidentStatus] = Query(None, alias="status"),
+    severity: Optional[SeverityLevel] = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> IncidentSummaryListResponse:
+    items, total = incident_store.list_summaries(
+        status=status_filter, severity=severity, limit=limit, offset=offset
+    )
+    return IncidentSummaryListResponse(
+        count=len(items), total=total, limit=limit, offset=offset, incidents=items
+    )
 
 
 @router.get("/{incident_id}", response_model=IncidentContext, summary="Get incident by ID")
-async def get_incident(incident_id: str) -> IncidentContext:
+def get_incident(incident_id: str) -> IncidentContext:
     incident = incident_store.get(incident_id)
     if not incident:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
@@ -73,13 +117,19 @@ async def get_incident(incident_id: str) -> IncidentContext:
     status_code=status.HTTP_201_CREATED,
     summary="Build or enrich Incident Context from telemetry evidence",
 )
-async def build_incident_context(payload: BuildContextRequest) -> IncidentContext:
+def build_incident_context(
+    payload: BuildContextRequest, background: BackgroundTasks
+) -> IncidentContext:
     """Accept logs/metrics/traces and assemble a normalized IncidentContext.
 
     If `incident_id` is provided and exists, evidence is merged into it.
     Otherwise a new incident is created.
     """
-    return build_context(payload)
+    is_new = not (payload.incident_id and incident_store.get(payload.incident_id))
+    incident = build_context(payload)
+    if is_new:
+        background.add_task(notify, "incident_created", incident, {"source": "api"})
+    return incident
 
 
 @router.post(
@@ -88,11 +138,15 @@ async def build_incident_context(payload: BuildContextRequest) -> IncidentContex
     status_code=status.HTTP_201_CREATED,
     summary="Run a reproducible failure scenario",
 )
-async def run_failure_scenario(payload: ScenarioRunRequest) -> ScenarioRunResult:
+async def run_failure_scenario(
+    payload: ScenarioRunRequest, background: BackgroundTasks
+) -> ScenarioRunResult:
     """Fire orders against order-service under a known failure pattern and
     return a fully populated IncidentContext with synthetic telemetry evidence.
 
-    For realistic failures, set payment-service env before starting:
+    The scenario's failure settings are applied to payment-service through its
+    /fault-injection API before the orders are sent and restored afterwards
+    (apply_failure_config / restore_failure_config):
     - payment_timeout:        FAILURE_RATE=1.0
     - payment_high_latency:   LATENCY_MS=2000
     - payment_cascade_failure: FAILURE_RATE=0.6 LATENCY_MS=800
@@ -104,6 +158,9 @@ async def run_failure_scenario(payload: ScenarioRunRequest) -> ScenarioRunResult
     except Exception as exc:
         logger.exception("Scenario run failed")
         raise HTTPException(status_code=502, detail=f"Scenario execution failed: {exc}") from exc
+    background.add_task(
+        notify, "incident_created", result.incident, {"source": f"scenario:{payload.scenario.value}"}
+    )
     return result
 
 
@@ -112,12 +169,20 @@ async def run_failure_scenario(payload: ScenarioRunRequest) -> ScenarioRunResult
     response_model=IncidentContext,
     summary="Update incident status",
 )
-async def update_status(incident_id: str, new_status: IncidentStatus) -> IncidentContext:
-    incident = incident_store.get(incident_id)
-    if not incident:
+def update_status(
+    incident_id: str, new_status: IncidentStatus, background: BackgroundTasks
+) -> IncidentContext:
+    def set_status(incident: IncidentContext) -> bool:
+        was_resolved = incident.status in (IncidentStatus.RESOLVED, IncidentStatus.CLOSED)
+        incident.status = new_status
+        return was_resolved
+
+    try:
+        incident, was_resolved = incident_store.update(incident_id, set_status)
+    except KeyError:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
-    incident.status = new_status
-    incident_store.save(incident)
+    if new_status == IncidentStatus.RESOLVED and not was_resolved:
+        background.add_task(notify, "incident_resolved", incident, {"source": "api"})
     return incident
 
 
@@ -126,7 +191,7 @@ async def update_status(incident_id: str, new_status: IncidentStatus) -> Inciden
     response_model=CorrelationResult,
     summary="Correlate evidence + detect anomalies + score severity",
 )
-async def correlate(incident_id: str) -> CorrelationResult:
+def correlate(incident_id: str) -> CorrelationResult:
     """Run Week 9 correlation pipeline on a stored incident.
 
     - Links logs ↔ spans by trace_id
@@ -142,6 +207,71 @@ async def correlate(incident_id: str) -> CorrelationResult:
 
 
 @router.post(
+    "/{incident_id}/enrich",
+    response_model=EnrichmentResult,
+    summary="Pull live logs/metrics/traces from Loki, Prometheus and Tempo",
+)
+async def enrich_incident(
+    incident_id: str,
+    settings: SettingsDep,
+    payload: Optional[EnrichRequest] = None,
+) -> EnrichmentResult:
+    """Fetch evidence for the incident's services and time window from the
+    observability stack and merge it into the incident. Safe to re-run:
+    evidence already on the incident is skipped. A backend being down is
+    reported in `sources` rather than failing the request.
+    """
+    payload = payload or EnrichRequest()
+    try:
+        return await TelemetryEnrichmentService(settings).enrich(
+            incident_id,
+            lookback_seconds=payload.lookback_seconds,
+            services=payload.services,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+
+@router.get(
+    "/{incident_id}/similar",
+    response_model=SimilarIncidentsResponse,
+    summary="Find past incidents like this one",
+)
+def similar_incidents(
+    incident_id: str,
+    limit: int = Query(5, ge=1, le=50),
+    min_score: float = Query(0.3, ge=0.0, le=1.0),
+) -> SimilarIncidentsResponse:
+    """Ranks other incidents by signature similarity (services, error-log
+    templates, failing spans, anomalies, alerts, RCA cause). Each result lists
+    the shared features that explain the match, plus its past RCA and runbook.
+    """
+    try:
+        items = incident_store.find_similar(incident_id, limit=limit, min_score=min_score)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+    return SimilarIncidentsResponse(incident_id=incident_id, count=len(items), similar=items)
+
+
+@router.post(
+    "/{incident_id}/baseline",
+    response_model=BaselineResult,
+    summary="Compare affected services with their own recent history (Prometheus)",
+)
+async def analyze_baseline(incident_id: str, settings: SettingsDep) -> BaselineResult:
+    """For each affected service, compare request rate, 5xx ratio, latency and
+    business failure ratio in the incident window against the preceding
+    BASELINE_LOOKBACK_SECONDS using robust z-scores. Results are stored on the
+    incident (metadata.baseline); the next correlation turns anomalous signals
+    into findings that raise the severity score and inform RCA.
+    """
+    try:
+        return await BaselineAnalyzer(settings).analyze(incident_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+
+@router.post(
     "/{incident_id}/rca",
     response_model=RCAResponse,
     summary="Run AI-assisted Root Cause Analysis",
@@ -149,6 +279,7 @@ async def correlate(incident_id: str) -> CorrelationResult:
 async def run_rca(
     incident_id: str,
     rca_engine: RCAEngineDep,
+    background: BackgroundTasks,
     run_correlation: bool = True,
 ) -> RCAResponse:
     """Week 10: AI-assisted RCA using Incident Context + evidence.
@@ -157,9 +288,13 @@ async def run_rca(
     severity scoring. Set run_correlation=false to skip.
     """
     try:
-        return await rca_engine.analyze(incident_id, run_correlation=run_correlation)
+        result = await rca_engine.analyze(incident_id, run_correlation=run_correlation)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+    incident = await run_in_threadpool(incident_store.get, incident_id)
+    if incident:
+        background.add_task(notify, "rca_completed", incident, rca_details(result))
+    return result
 
 
 @router.post(
@@ -170,6 +305,7 @@ async def run_rca(
 async def generate_runbook(
     incident_id: str,
     runbook_engine: RunbookEngineDep,
+    background: BackgroundTasks,
 ) -> RunbookResponse:
     """Week 11: AI-generated runbook and remediation plan.
 
@@ -178,7 +314,11 @@ async def generate_runbook(
     verification checks, and escalation guidance.
     """
     try:
-        return await runbook_engine.generate(incident_id)
+        result = await runbook_engine.generate(incident_id)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+    incident = await run_in_threadpool(incident_store.get, incident_id)
+    if incident:
+        background.add_task(notify, "runbook_completed", incident, runbook_details(result))
+    return result
 

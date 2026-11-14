@@ -221,6 +221,42 @@
             "url": "{{payment_base}}/api/v1/payments/by-order/{{order_id}}",
             "description": ""
           }
+        },
+        {
+          "name": "Payment Fault Injection \u2014 Get",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{payment_base}}/api/v1/fault-injection",
+            "description": "Current runtime failure settings."
+          }
+        },
+        {
+          "name": "Payment Fault Injection \u2014 Set",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{payment_base}}/api/v1/fault-injection",
+            "description": "Change failure injection without restarting payment-service.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"failure_rate\": 1.0,\n  \"latency_ms\": 0\n}"
+            }
+          }
+        },
+        {
+          "name": "Payment Fault Injection \u2014 Reset",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{payment_base}}/api/v1/fault-injection",
+            "description": "Back to FAILURE_RATE / LATENCY_MS from env."
+          }
         }
       ]
     },
@@ -413,8 +449,17 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{ai_base}}/api/v1/incidents",
-            "description": ""
+            "url": "{{ai_base}}/api/v1/incidents?limit=50&offset=0",
+            "description": "Paginated, newest first. Optional filters: status, severity. Response includes count, total, limit, offset."
+          }
+        },
+        {
+          "name": "List Incident Summaries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/summaries?limit=50&offset=0",
+            "description": "Lightweight list (no logs/metrics/traces). Optional filters: status, severity."
           }
         },
         {
@@ -440,6 +485,34 @@
     {
       "name": "5. Correlation / RCA / Runbook",
       "item": [
+        {
+          "name": "Enrich Incident (live telemetry)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"lookback_seconds\": 900\n}" },
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}/enrich",
+            "description": "Pulls logs (Loki), metrics (Prometheus) and traces (Tempo) for the incident's services and time window. Safe to re-run."
+          }
+        },
+        {
+          "name": "Baseline Anomaly Analysis",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}/baseline",
+            "description": "Compare affected services with their own last hour in Prometheus (request rate, 5xx ratio, latency, business failure ratio). Run before Correlate."
+          }
+        },
+        {
+          "name": "Similar Incidents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ai_base}}/api/v1/incidents/{{incident_id}}/similar?limit=5",
+            "description": "Past incidents most like this one, with shared features, past RCA cause and runbook."
+          }
+        },
         {
           "name": "Correlate Incident",
           "request": {
@@ -491,6 +564,24 @@
           }
         },
         {
+          "name": "Agent Investigate (stream)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incident_id\": \"{{incident_id}}\",\n  \"question\": \"Why are payments failing?\"\n}"
+            },
+            "url": "{{ai_base}}/api/v1/agent/investigate/stream",
+            "description": "Server-sent events: mode, planning, step (each tool + reasoning), result."
+          }
+        },
+        {
           "name": "Agent Investigate (latest)",
           "request": {
             "method": "POST",
@@ -532,11 +623,11 @@
           }
         },
         {
-          "name": "Query Prometheus (orders_total)",
+          "name": "Query Prometheus (otel_orders_total)",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{ai_base}}/api/v1/observability/metrics?query=orders_total",
+            "url": "{{ai_base}}/api/v1/observability/metrics?query=otel_orders_total",
             "description": ""
           }
         },
@@ -613,6 +704,24 @@
               }
             }
           ]
+        },
+        {
+          "name": "Alertmanager Webhook (sample firing alert)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ai_base}}/api/v1/alerts/alertmanager",
+            "description": "What Alertmanager sends. Opens an incident and investigates it in the background; send again with status=resolved to resolve it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"4\",\n  \"groupKey\": \"{}:{alertname=\\\"HighPaymentFailureRate\\\", service=\\\"payment-service\\\"}\",\n  \"status\": \"firing\",\n  \"receiver\": \"ai-service\",\n  \"groupLabels\": {\n    \"alertname\": \"HighPaymentFailureRate\",\n    \"service\": \"payment-service\"\n  },\n  \"commonLabels\": {\n    \"alertname\": \"HighPaymentFailureRate\",\n    \"service\": \"payment-service\",\n    \"severity\": \"warning\"\n  },\n  \"commonAnnotations\": {\n    \"summary\": \"High payment failure rate\"\n  },\n  \"externalURL\": \"http://alertmanager:9093\",\n  \"alerts\": [\n    {\n      \"status\": \"firing\",\n      \"labels\": {\n        \"alertname\": \"HighPaymentFailureRate\",\n        \"service\": \"payment-service\",\n        \"severity\": \"warning\"\n      },\n      \"annotations\": {\n        \"summary\": \"High payment failure rate\",\n        \"description\": \"More than 30% of payments are failing over the last 5 minutes.\"\n      },\n      \"startsAt\": \"2026-10-20T10:00:00Z\",\n      \"fingerprint\": \"postman-demo-1\"\n    }\n  ]\n}"
+            }
+          }
         }
       ]
     }

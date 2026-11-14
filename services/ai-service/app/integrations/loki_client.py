@@ -1,11 +1,10 @@
 """Loki HTTP API client (Week 13)."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-
-import httpx
+from typing import Any, Dict, List
 
 from app.core.logging import get_logger
+from app.integrations.http import get_http_client
 
 logger = get_logger(__name__)
 
@@ -30,23 +29,22 @@ class LokiClient:
             "limit": str(limit),
             "direction": direction,
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/loki/api/v1/query_range", params=params)
-            r.raise_for_status()
-            return r.json()
+        r = await get_http_client().get(
+            f"{self.base_url}/loki/api/v1/query_range", params=params, timeout=self.timeout
+        )
+        r.raise_for_status()
+        return r.json()
 
     async def labels(self) -> List[str]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            r = await client.get(f"{self.base_url}/loki/api/v1/labels")
-            r.raise_for_status()
-            data = r.json()
-            return data.get("data") or []
+        r = await get_http_client().get(f"{self.base_url}/loki/api/v1/labels", timeout=self.timeout)
+        r.raise_for_status()
+        data = r.json()
+        return data.get("data") or []
 
     async def health(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                r = await client.get(f"{self.base_url}/ready")
-                return r.status_code == 200
+            r = await get_http_client().get(f"{self.base_url}/ready", timeout=3.0)
+            return r.status_code == 200
         except Exception:
             return False
 

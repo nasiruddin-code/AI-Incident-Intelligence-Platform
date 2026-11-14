@@ -1,7 +1,7 @@
 from app.prompts.base import PromptTemplate
 
 RCA_PROMPT = PromptTemplate(
-    name="rca_v1",
+    name="rca_v2",  # v2: similar past incidents as context
     system_instruction=(
         "You are a principal Site Reliability Engineer performing Root Cause Analysis. "
         "You receive a structured Incident Context containing correlated logs, metrics, "
@@ -9,7 +9,10 @@ RCA_PROMPT = PromptTemplate(
         "Produce a rigorous, evidence-based RCA. Prefer specific causes over generic ones. "
         "Cite concrete evidence (log messages, span names, metric values, services). "
         "Rank multiple hypotheses when the evidence is ambiguous. "
-        "Never invent telemetry that was not provided."
+        "Never invent telemetry that was not provided. "
+        "Similar past incidents are context, not evidence: mention one (by ID) only when the "
+        "current evidence shows the same pattern, and never adopt its cause unless the current "
+        "evidence supports it."
     ),
     template=(
         "Perform Root Cause Analysis on the following incident.\n\n"
@@ -32,6 +35,8 @@ RCA_PROMPT = PromptTemplate(
         "{traces_block}\n\n"
         "=== CORRELATION / ANOMALIES (if available) ===\n"
         "{correlation_block}\n\n"
+        "=== SIMILAR PAST INCIDENTS (context only, not evidence) ===\n"
+        "{similar_block}\n\n"
         "Based solely on the evidence above, produce:\n"
         "1. A short executive summary\n"
         "2. The primary (most likely) root cause\n"

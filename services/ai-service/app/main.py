@@ -1,15 +1,20 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.auth import APIKeyMiddleware
+from app.core.rate_limit import RateLimitMiddleware
 
 from app.api.v1.router import api_router
 from app.api.v1.endpoints import metrics as metrics_endpoint
 from app.core.config import Settings, get_settings
-from app.core.logging import configure_logging, get_logger
+from app.core.logging import RequestIDMiddleware, configure_logging, get_logger
 from app.core.telemetry import instrument_app, setup_telemetry, shutdown_telemetry
 from app.db.session import init_db
+from app.integrations.http import close_http_client
+from app.services.log_monitor import get_monitor
+from app.services.incident_store import ConcurrentModificationError
 
 logger = get_logger(__name__)
 
@@ -36,7 +41,13 @@ def _make_lifespan(settings: Settings):
             settings.ENVIRONMENT,
             settings.AI_PROVIDER,
         )
+        if settings.ENVIRONMENT == "production" and not settings.ENABLE_AUTH:
+            logger.warning("ENVIRONMENT=production with ENABLE_AUTH=false: the API is unauthenticated")
+        if settings.LOG_MONITOR_ENABLED:
+            get_monitor().start()
         yield
+        await get_monitor().stop()
+        await close_http_client()
         shutdown_telemetry()
         logger.info("Shutting down %s", settings.APP_NAME)
 
@@ -49,7 +60,7 @@ def create_app() -> FastAPI:
     configured app instances in tests, and mirrors the pattern every other
     microservice in this repo will follow."""
     settings = get_settings()
-    configure_logging(settings.LOG_LEVEL)
+    configure_logging(settings.LOG_LEVEL, settings.LOG_FORMAT, settings.SERVICE_NAME)
 
     app = FastAPI(
         title=settings.APP_NAME,
@@ -59,15 +70,28 @@ def create_app() -> FastAPI:
         lifespan=_make_lifespan(settings),
     )
 
+    # Middleware added last runs first: CORS -> auth -> rate limit -> routes.
+    # Auth must precede rate limiting so limits are keyed by API key name.
+    app.add_middleware(RateLimitMiddleware)
+    # Week 15: optional API-key auth with scopes (ENABLE_AUTH=true + API_KEY / API_KEYS)
+    app.add_middleware(APIKeyMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
+        # Credentials with a wildcard origin are rejected by browsers.
+        allow_credentials="*" not in settings.CORS_ORIGINS,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    # Week 15: optional API-key auth (ENABLE_AUTH=true + API_KEY=...)
-    app.add_middleware(APIKeyMiddleware)
+    # Outermost: every response (including 401/429) carries X-Request-ID
+    app.add_middleware(RequestIDMiddleware)
+
+    @app.exception_handler(ConcurrentModificationError)
+    async def _conflict(request: Request, exc: ConcurrentModificationError) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": f"Incident was modified concurrently; retry the request. ({exc})"},
+        )
 
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
     # Week 14: Prometheus scrape path (unversioned)

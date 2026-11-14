@@ -21,7 +21,10 @@
 - [x] Grafana AI Insights dashboard
 - [x] Prometheus alert rules
 - [x] E2E workflow endpoint
-- [x] Optional API-key auth
+- [x] Optional API-key auth (scoped keys, fail-closed when no keys are configured)
+- [x] Per-client rate limits (stricter for AI routes)
+- [x] Slack / webhook incident notifications
+- [x] CI: tests, lint, config validation, image builds
 - [x] LLM retry + mock fallback
 
 ## Gaps before real production

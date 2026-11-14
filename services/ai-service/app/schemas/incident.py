@@ -44,6 +44,10 @@ class IncidentContext(BaseModel):
     )
     notes: Optional[str] = Field(None, description="Free text notes or AI summary regarding the incident")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Extra structured metadata")
+    version: int = Field(
+        0,
+        description="Optimistic-lock version, incremented on every save (0 = not stored yet)",
+    )
 
 
 # --- API request / response models ----------------------------------------
@@ -60,6 +64,7 @@ class ScenarioRunRequest(BaseModel):
     """Trigger a reproducible failure scenario against the sample microservices."""
     scenario: ScenarioType = Field(..., description="Which failure scenario to run")
     order_count: int = Field(default=5, ge=1, le=50, description="How many orders to fire")
+    concurrency: int = Field(default=5, ge=1, le=20, description="Orders in flight at once")
     # Override targets (defaults point at docker-compose service names)
     order_service_url: str = Field(
         default="http://order-service:8001",
@@ -67,7 +72,15 @@ class ScenarioRunRequest(BaseModel):
     )
     payment_service_url: str = Field(
         default="http://payment-service:8002",
-        description="Base URL of payment-service (for future config injection)",
+        description="Base URL of payment-service (its /fault-injection API is used to apply the scenario)",
+    )
+    apply_failure_config: bool = Field(
+        default=True,
+        description="Set payment-service FAILURE_RATE/LATENCY_MS for this scenario before firing orders",
+    )
+    restore_failure_config: bool = Field(
+        default=True,
+        description="Put payment-service back to its previous failure settings afterwards",
     )
 
 
@@ -96,8 +109,100 @@ class BuildContextRequest(BaseModel):
 
 
 class IncidentListResponse(BaseModel):
-    count: int
+    count: int = Field(..., description="Number of incidents in this page")
+    total: int = Field(0, description="Total incidents matching the filters")
+    limit: int = 50
+    offset: int = 0
     incidents: List[IncidentContext]
+
+
+class IncidentSummary(BaseModel):
+    """Incident without logs/metrics/traces — cheap to list."""
+    incident_id: str
+    title: str
+    status: IncidentStatus
+    severity: SeverityLevel
+    affected_services: List[str] = Field(default_factory=list)
+    scenario: Optional[ScenarioType] = None
+    evidence_summary: Optional[str] = None
+
+
+class SimilarIncident(BaseModel):
+    incident_id: str
+    title: str
+    status: IncidentStatus
+    severity: SeverityLevel
+    score: float = Field(..., ge=0.0, le=1.0, description="Cosine similarity of incident signatures")
+    shared_features: List[str] = Field(default_factory=list, description="Strongest shared features first")
+    rca_primary_cause: Optional[str] = None
+    rca_confidence: Optional[float] = None
+    runbook_title: Optional[str] = None
+
+
+class SimilarIncidentsResponse(BaseModel):
+    incident_id: str
+    count: int
+    similar: List[SimilarIncident]
+
+
+class BaselineSignalResult(BaseModel):
+    service: str
+    signal: str
+    unit: str = ""
+    anomalous: bool
+    baseline_median: Optional[float] = None
+    baseline_mad: Optional[float] = None
+    current_median: Optional[float] = None
+    z_score: Optional[float] = Field(None, description="Robust z-score: (current - median) / (1.4826 * MAD)")
+    baseline_points: int = 0
+    current_points: int = 0
+    reason: str = ""
+
+
+class BaselineResult(BaseModel):
+    incident_id: str
+    analyzed_at: datetime
+    baseline_window: TimeWindow
+    incident_window: TimeWindow
+    signals: List[BaselineSignalResult]
+    anomalies: int = Field(0, description="Number of anomalous signals")
+
+
+class EnrichRequest(BaseModel):
+    """Pull live evidence from Prometheus / Loki / Tempo into an incident."""
+    lookback_seconds: Optional[int] = Field(
+        None, ge=60, le=86400,
+        description="Window size ending at the incident end; default ENRICH_LOOKBACK_SECONDS",
+    )
+    services: Optional[List[str]] = Field(
+        None, description="Services to query; defaults to the incident's affected_services"
+    )
+
+
+class EnrichmentSourceStatus(BaseModel):
+    ok: bool
+    fetched: int = 0
+    added: int = 0
+    error: Optional[str] = None
+
+
+class EnrichmentResult(BaseModel):
+    incident_id: str
+    window: TimeWindow
+    services: List[str]
+    sources: Dict[str, EnrichmentSourceStatus]
+    logs_added: int
+    metrics_added: int
+    spans_added: int
+    evidence_summary: Optional[str] = None
+
+
+class IncidentSummaryListResponse(BaseModel):
+    count: int = Field(..., description="Number of incidents in this page")
+    total: int = Field(..., description="Total incidents matching the filters")
+    limit: int
+    offset: int
+    incidents: List[IncidentSummary]
 
 
 # --- Week 9: Correlation & Anomaly Detection --------------------------------
@@ -117,7 +222,9 @@ class AnomalyFinding(BaseModel):
     """A detected anomaly in the incident evidence."""
     anomaly_type: str = Field(
         ...,
-        description="error_rate_spike | latency_spike | error_log_burst | error_span_burst | service_fanout",
+        description="error_rate_spike | latency_spike | error_log_burst | error_span_burst | service_fanout | "
+        "baseline_<signal> (deviation from the service's own history: baseline_request_rate, "
+        "baseline_http_error_ratio, baseline_latency_avg, baseline_failure_ratio)",
     )
     service: Optional[str] = None
     description: str

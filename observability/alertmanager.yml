@@ -1,0 +1,20 @@
+# Alertmanager: route every alert to ai-service, which opens an incident per
+# alert group and investigates it (live telemetry -> correlation -> RCA -> runbook).
+
+route:
+  receiver: ai-service
+  group_by: ["alertname", "service"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: ai-service
+    webhook_configs:
+      - url: http://ai-service:8000/api/v1/alerts/alertmanager
+        send_resolved: true
+        # When ai-service runs with ENABLE_AUTH=true, send its API_KEY:
+        # http_config:
+        #   authorization:
+        #     type: Bearer
+        #     credentials: <API_KEY>

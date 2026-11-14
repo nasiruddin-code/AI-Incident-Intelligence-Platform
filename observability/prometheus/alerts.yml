@@ -12,11 +12,12 @@ groups:
 
       - alert: HighPaymentFailureRate
         expr: |
-          sum(rate(payments_total{status="failed"}[5m]))
+          sum(rate(otel_payments_total{status="failed"}[5m]))
           /
-          clamp_min(sum(rate(payments_total[5m])), 0.001) > 0.3
+          clamp_min(sum(rate(otel_payments_total[5m])), 0.001) > 0.3
         for: 2m
         labels:
+          service: payment-service
           severity: warning
         annotations:
           summary: "High payment failure rate"
@@ -24,21 +25,50 @@ groups:
 
       - alert: HighOrderFailureRate
         expr: |
-          sum(rate(orders_total{status="payment_failed"}[5m]))
+          sum(rate(otel_orders_total{status="payment_failed"}[5m]))
           /
-          clamp_min(sum(rate(orders_total[5m])), 0.001) > 0.3
+          clamp_min(sum(rate(otel_orders_total[5m])), 0.001) > 0.3
         for: 2m
         labels:
+          service: order-service
           severity: warning
         annotations:
           summary: "High order payment-failure rate"
           description: "More than 30% of orders end in payment_failed."
 
       - alert: ElevatedPaymentLatency
-        expr: histogram_quantile(0.95, sum(rate(payment_duration_seconds_bucket[5m])) by (le)) > 1
+        expr: histogram_quantile(0.95, sum(rate(otel_payment_duration_seconds_bucket[5m])) by (le)) > 1
         for: 3m
         labels:
+          service: payment-service
           severity: warning
         annotations:
           summary: "Elevated payment latency (p95 > 1s)"
           description: "Payment processing p95 latency is above 1 second."
+
+      - alert: AIProviderFallbackActive
+        expr: sum(increase(ai_llm_fallbacks_total[10m])) > 0
+        for: 0m
+        labels:
+          service: ai-service
+          # Don't spend AI calls investigating an AI outage
+          ai_investigate: "false"
+          severity: warning
+        annotations:
+          summary: "AI answers are coming from the mock fallback"
+          description: "Every configured AI provider failed for at least one request in the last 10 minutes; RCA/runbook output is placeholder text (degraded=true)."
+
+      - alert: AIProviderErrorRateHigh
+        expr: |
+          sum by (provider) (rate(ai_llm_requests_total{outcome="error"}[10m]))
+          /
+          clamp_min(sum by (provider) (rate(ai_llm_requests_total[10m])), 0.001) > 0.2
+        for: 5m
+        labels:
+          service: ai-service
+          # Don't spend AI calls investigating an AI outage
+          ai_investigate: "false"
+          severity: warning
+        annotations:
+          summary: "AI provider {{ $labels.provider }} error rate above 20%"
+          description: "More than 20% of calls to {{ $labels.provider }} are failing (check keys, quotas, or provider status)."

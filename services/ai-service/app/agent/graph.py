@@ -1,13 +1,24 @@
-"""LangGraph-style investigation agent workflow (Week 12).
+"""Investigation agent workflow (Week 12).
 
-Uses a StateGraph when langgraph is available; otherwise falls back to a
-deterministic sequential investigation path so the service still runs offline.
+Two modes:
+- planner: the model chooses tools step by step (app/agent/planner.py)
+- fixed:   a deterministic LangGraph StateGraph (resolve -> evidence ->
+           correlate -> rca -> runbook -> summarize), with a plain sequential
+           fallback if langgraph is unavailable
+
+AGENT_MODE=auto (default) uses the planner whenever a real model is
+configured, and the fixed pipeline with the mock provider or if the
+planner cannot run.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, TypedDict
 
+from starlette.concurrency import run_in_threadpool
 from app.agent import tools as agent_tools
+from app.agent.events import emit
+from app.agent.planner import run_planner
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.providers.base import AIProvider
 from app.schemas.agent import AgentInvestigateRequest, AgentInvestigateResponse, ToolCallRecord
@@ -32,12 +43,14 @@ def _record(tool: str, input_summary: str, success: bool, output: Any) -> ToolCa
         out_summary = json_summary(output)
     else:
         out_summary = str(output)[:300]
-    return ToolCallRecord(
+    record = ToolCallRecord(
         tool=tool,
         input_summary=input_summary,
         success=success,
         output_summary=out_summary,
     )
+    emit("step", record.model_dump())
+    return record
 
 
 def json_summary(data: Dict[str, Any], limit: int = 400) -> str:
@@ -53,11 +66,18 @@ async def run_investigation(
     req: AgentInvestigateRequest,
     provider: AIProvider,
 ) -> AgentInvestigateResponse:
-    """Execute the investigation workflow.
+    """Execute the investigation workflow (planner or fixed, see module docs)."""
+    mode = req.mode or get_settings().AGENT_MODE
+    if mode == "planner" or (mode == "auto" and provider.name != "mock"):
+        try:
+            emit("mode", {"mode": "planner"})
+            return await run_planner(req, provider, _build_summary)
+        except Exception as exc:
+            logger.warning("Planner agent unavailable (%s); using fixed pipeline", exc)
+            emit("mode", {"mode": "fixed", "reason": f"planner unavailable: {exc}"})
+    else:
+        emit("mode", {"mode": "fixed"})
 
-    Preferred path: LangGraph StateGraph (if importable).
-    Fallback: deterministic tool sequence that still produces a full report.
-    """
     try:
         return await _run_langgraph(req, provider)
     except Exception as exc:
@@ -75,7 +95,7 @@ async def _run_sequential(
 
     # 1. Resolve incident
     if not incident_id:
-        listed = agent_tools.tool_list_incidents()
+        listed = await run_in_threadpool(agent_tools.tool_list_incidents)
         steps.append(_record("list_incidents", "", True, listed))
         findings["list_incidents"] = listed
         if listed.get("count", 0) == 0:
@@ -90,7 +110,7 @@ async def _run_sequential(
         incident_id = listed["incidents"][0]["incident_id"]
         findings["selected_incident_id"] = incident_id
 
-    info = agent_tools.tool_get_incident(incident_id)
+    info = await run_in_threadpool(agent_tools.tool_get_incident, incident_id)
     ok = "error" not in info
     steps.append(_record("get_incident", f"incident_id={incident_id}", ok, info))
     findings["incident"] = info
@@ -119,13 +139,13 @@ async def _run_sequential(
             if kw in req.question.lower():
                 query = kw
                 break
-    evidence = agent_tools.tool_search_evidence(incident_id, query)
+    evidence = await run_in_threadpool(agent_tools.tool_search_evidence, incident_id, query)
     steps.append(_record("search_evidence", f"query={query}", True, evidence))
     findings["evidence"] = evidence
 
     # 3. Correlate
     if req.run_correlation:
-        corr = agent_tools.tool_correlate(incident_id)
+        corr = await run_in_threadpool(agent_tools.tool_correlate, incident_id)
         steps.append(_record("correlate", f"incident_id={incident_id}", "error" not in corr, corr))
         findings["correlation"] = corr
 
@@ -165,7 +185,7 @@ async def _run_langgraph(
         incident_id = state.get("incident_id")
 
         if not incident_id:
-            listed = agent_tools.tool_list_incidents()
+            listed = await run_in_threadpool(agent_tools.tool_list_incidents)
             steps.append(_record("list_incidents", "", True, listed).model_dump())
             findings["list_incidents"] = listed
             if listed.get("count", 0) > 0:
@@ -173,7 +193,7 @@ async def _run_langgraph(
                 findings["selected_incident_id"] = incident_id
 
         if incident_id:
-            info = agent_tools.tool_get_incident(incident_id)
+            info = await run_in_threadpool(agent_tools.tool_get_incident, incident_id)
             steps.append(
                 _record("get_incident", f"incident_id={incident_id}", "error" not in info, info).model_dump()
             )
@@ -199,7 +219,7 @@ async def _run_langgraph(
             if kw in q:
                 query = kw
                 break
-        evidence = agent_tools.tool_search_evidence(incident_id, query)
+        evidence = await run_in_threadpool(agent_tools.tool_search_evidence, incident_id, query)
         steps.append(_record("search_evidence", f"query={query}", True, evidence).model_dump())
         findings["evidence"] = evidence
         return {**state, "steps": steps, "findings": findings}
@@ -212,7 +232,7 @@ async def _run_langgraph(
         incident_id = state.get("incident_id")
         if not incident_id:
             return state
-        corr = agent_tools.tool_correlate(incident_id)
+        corr = await run_in_threadpool(agent_tools.tool_correlate, incident_id)
         steps.append(
             _record("correlate", f"incident_id={incident_id}", "error" not in corr, corr).model_dump()
         )
@@ -341,6 +361,12 @@ def _build_summary(
         parts.append(
             f"Runbook '{rb.get('title')}' with {n_steps} steps and "
             f"{n_rem} remediation actions (confidence={rb.get('confidence')})."
+        )
+
+    if rca.get("degraded") or rb.get("degraded"):
+        parts.append(
+            "WARNING: the configured AI provider was unavailable; AI results "
+            "above came from the fallback provider and are not real analysis."
         )
 
     return " ".join(parts)
